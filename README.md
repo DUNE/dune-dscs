@@ -4,6 +4,10 @@ The dune-dscs repository is the top-level repository for the Detector Slow Contr
 Initially, it will contain code for bridges and emulators, but these may be refactored into other repositories in the future.
 The DSCS code wiki will be hosted at this repository, and the DUNE wiki will be used for internal information.
 
+## Coding Style 
+
+Python code should follow PEP 8 conventions. Pull requests are automatically checked with PyLint using the repository's `.pylintrc` configuration.
+
 ## Copyright and Licensing
 Copyright © 2026 FERMI NATIONAL ACCELERATOR LABORATORY for the benefit of the DUNE Collaboration.
 
