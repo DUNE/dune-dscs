@@ -6,7 +6,11 @@ The DSCS code wiki will be hosted at this repository, and the DUNE wiki will be 
 
 ## Coding Style 
 
-Python code should follow PEP 8 conventions. Pull requests are automatically checked with PyLint using the repository's `.pylintrc` configuration.
+Python code should follow PEP 8 conventions.
+
+https://peps.python.org/pep-0008/
+
+Pull requests are automatically checked with PyLint using the repository's `.pylintrc` configuration.
 
 ## Copyright and Licensing
 Copyright © 2026 FERMI NATIONAL ACCELERATOR LABORATORY for the benefit of the DUNE Collaboration.
