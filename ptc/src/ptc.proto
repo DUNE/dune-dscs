@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package ptc;
+import "google/protobuf/any.proto";
+
+// Every request to the PTC server is 
+// Command that wraps exactly one type message
+message Command {
+    google.protobuf.Any cmd = 1;
+}
+
+
+/*** Low level register commands ***/
+
+//peek PTC memory
+
+message Ping{}
+
+message Peek {
+    //address in PTC memory (32 bit)
+    uint32 addr = 1; 
+    //replies RegValue
+}
+
+//poke PTC memory
+message Poke {
+    //address in PTC memory (32 bit)
+    uint32 addr = 1; 
+    //32 bit value 
+    uint32 value = 2; 
+    //replies RegValue
+}
+
+/*** Generic replies ***/
+
+//Nothing
+message Empty {}
+
+message Status {
+    bool success = 1;
+    bytes extra = 2;
+}
+
+message RegValue {
+    uint32 addr = 1;
+    uint32 value = 2;
+}
+
+message ReadTemperature {
+  uint32 mux_channel = 1;
+  uint32 addr = 2;
+}
+
+message ReadVoltage {
+  uint32 mux_channel = 1;
+  uint32 addr = 2;
+}
+
+message ReadCurrent {
+  uint32 mux_channel = 1;
+  uint32 addr = 2;
+  double shunt_ohm = 3;
+}
+
+message DoubleValue {
+  double value = 1;
+}
+
+message PowerWIB {
+    uint32 slot = 1;
+    bool on = 2;
+}
+
+message ReadWIBPowerRequest {
+	uint32 wib = 1;
+}
+
+message ReadWIBPowerReply{
+	float voltage = 1;
+	float current = 2;
+}
+
+message PowerAllWIBs {
+    bool on = 1;
+}
+
