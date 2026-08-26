@@ -36,7 +36,7 @@ Software development repository for the <strong>PTC (Power and Timing Card)</str
 
 ## Overview
 
-This repository provides a framework for developing and validating software for the **Power and Timing Card (PTC)**. <br>
+This repository provides a framework for developing and validating software for the **Power and Timing Card (PTC)**. Original code author:  Shion Kubota<br>
 The immediate objectives are:
 
 1. Bring up a PTC-side service (`ptc_server`).
@@ -59,7 +59,7 @@ The immediate objectives are:
 > All builds are performed directly on the PTC.
 ---
 
-## Repository Layout
+## Subdirectory Layout
 
 ```
 PTC_development/
