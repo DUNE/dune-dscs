@@ -1,0 +1,54 @@
+# WIB sensor field definitions used by wib_ignition_bridge.py.
+#
+# Each entry is: <protobuf field name>: <array length>
+#
+# The name must match a field name in the WIB protobuf messages (wib_pb2 -
+# GetSensors.Sensors, GetSWVersion.Version, GetTimestamp.Timestamp,
+# GetTimingStatus.TimingStatus, Peek) exactly, since update_node() reads it
+# via getattr(response, name). The length is how many OPC UA variables get
+# created for that field (1 for a scalar field, N for a repeated/array field).
+#
+# To add a new WIB sensor: add a line under the matching section below and
+# restart the bridge. No Python changes are needed. This is separate from
+# wibs.yaml (the per-WIB host/port list), which several other scripts also
+# depend on.
+
+voltages:
+  ltc2990_4c_voltages: 4
+  ltc2990_4e_voltages: 4
+  ltc2991_48_voltages: 8
+  femb0_dc2dc_ltc2991_voltages: 8
+  femb1_dc2dc_ltc2991_voltages: 8
+  femb2_dc2dc_ltc2991_voltages: 8
+  femb3_dc2dc_ltc2991_voltages: 8
+  femb_ldo_a0_ltc2991_voltages: 8
+  femb_ldo_a1_ltc2991_voltages: 8
+  femb_bias_ltc2991_voltages: 8
+
+temperatures:
+  ltc2499_15_temps: 7
+  ad7414_49_temp: 1
+  ad7414_4d_temp: 1
+  ad7414_4a_temp: 1
+
+version:
+  version: 1
+
+timestamp:
+  timestamp: 1
+  day: 1
+  month: 1
+  year: 1
+  hour: 1
+  min: 1
+  sec: 1
+
+timing_status:
+  lol_val: 1
+  lol_flg_val: 1
+  los_val: 1
+  los_flg_val: 1
+  ept_status: 1
+
+peek:
+  addr: 1
