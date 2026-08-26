@@ -1,6 +1,8 @@
 # Python source code for the WIB OPC/UA bridge
 
-Dependencies and build instructions
+Don't forget to make the set up previously to run the bridge and the emulator. If you are int bridge directory do:
+
+cd ..; source setup.sh; cd -
 
 To run the bridge is necesary to setup the config files for the devises.
 
@@ -12,7 +14,4 @@ for example
 
 python configfilemaker.py --n=1 --port_start=5555
 
-It will produce a wib.yaml that contains the tpc, wib number, host and port number for each wib. 
-
-Don't forget to make the set up previously to run the bridge and the emulator.
-
+It will produce a wib.yaml that contains the tpc, wib number, host and port number for each wib.
