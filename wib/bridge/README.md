@@ -8,7 +8,7 @@ To run the bridge is necesary to setup the config files for the devises.
 
 For the case of the wib emulators, it is necesary to run the python script "wib_configfilemaker.py" as follows:
 
-python configfilemaker.py --n=<number of wibs> --port_start=<fisrt port number>
+python configfilemaker.py --n=\<number of wibs\> --port_start=\<fisrt port number\>
 
 for example
 
