@@ -1,0 +1,78 @@
+# Config for non-WIB sensors exposed by wib_ignition_bridge.py.
+#
+# WIBs are still defined in wibs.yaml (loaded via wib_config.py) and are
+# unaffected by this file - other scripts already depend on that file/format.
+#
+# To add a new IPMI, SNMP or SCPI sensor: add/edit an entry below and
+# restart the bridge. No Python changes are needed.
+#
+# Every device polled here is exposed in OPC UA under:
+#   Objects / <id> / <sensor name>
+#
+# poll_interval (seconds, optional, default 5): minimum time between polls
+# for that device. IPMI/SNMP/SCPI round-trips are much slower than the WIB
+# zmq calls, so these are polled on their own cadence rather than every 1s
+# cycle.
+
+#ipmi_devices: []
+# Example (remove the leading '#' and fill in real values once you have a
+# BMC to point at):
+#
+ipmi_devices:
+  - id: bmc_crate1
+    # Real BMC would be host: 192.168.1.50, port: 623 - pointed at a local
+    # ipmi_emulator.py instance for now (see its --host/--port, must be an
+    # address *this* machine owns, e.g. 127.0.0.1 or 0.0.0.0, not the BMC's).
+    host: 127.0.0.1
+    port: 6230
+    username: admin
+    password: admin
+    priv_level: administrator   # user | operator | administrator
+    poll_interval: 5
+    sensors:
+      # Names must match the BMC's SDR sensor names exactly
+      # (e.g. as shown by `ipmitool -H <host> -U <user> -P <pass> sdr list`).
+      - "CPU1 Temp"
+#       - "Fan1"
+#       - "12V"
+
+#snmp_devices: []
+# Example:
+#
+snmp_devices:
+  - id: switch1
+    # Real switch would be host: 192.168.1.60, port: 161 - pointed at a
+    # local snmp_emulator.py instance for now (its --host must be an
+    # address *this* machine owns, e.g. 127.0.0.1 or 0.0.0.0, not the switch's;
+    # port 161 needs root, so the emulator defaults to 16123 instead).
+    host: 127.0.0.1
+    port: 16123
+    community: public
+    version: 2c              # 1 | 2c
+    poll_interval: 5
+    sensors:
+      - name: sys_uptime
+        oid: "1.3.6.1.2.1.1.3.0"
+      - name: if_in_octets_1
+        oid: "1.3.6.1.2.1.2.2.1.10.1"
+
+#scpi_devices: []
+# Example:
+#
+scpi_devices:
+  - id: instrument1
+    # Real instrument would be host: 192.168.1.70, port: 5025 (the common
+    # "SCPI-RAW" TCP port) - pointed at a local scpi_emulator.py instance
+    # for now (its --host must be an address *this* machine owns, e.g.
+    # 127.0.0.1 or 0.0.0.0, not the instrument's).
+    host: 127.0.0.1
+    port: 5025
+    poll_interval: 5
+    sensors:
+      # `command` is sent to the instrument verbatim (with a trailing
+      # newline); the ASCII reply is parsed as a float. Use whatever query
+      # the instrument's SCPI command set defines, e.g. `MEAS:TEMP?`.
+      - name: temp1
+        command: "MEAS:TEMP?"
+      - name: volt1
+        command: "MEAS:VOLT:DC?"

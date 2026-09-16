@@ -1,0 +1,5 @@
+wibs:
+  - tpc: 0
+    wib: 1
+    host: localhost
+    port: 5555
