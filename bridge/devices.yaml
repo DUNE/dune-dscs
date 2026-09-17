@@ -32,8 +32,10 @@ ipmi_devices:
     sensors:
       # Names must match the BMC's SDR sensor names exactly
       # (e.g. as shown by `ipmitool -H <host> -U <user> -P <pass> sdr list`).
-      - "CPU1 Temp"
-#       - "Fan1"
+      #- "CPU1 Temp"
+      - "Temp1"
+      - "Fan1"
+      - "Voltage1"
 #       - "12V"
 
 #snmp_devices: []
