@@ -28,19 +28,25 @@ Before starting, make sure you have the following installed:
    cd dune-dscs/wib/wib-emulator
 
 2. Run the environment setup script:
+   ```bash
    source setup.sh
+   
 3. Start the WIB emulator:
+   ```bash
    python wib_emulator_v3p1.py
 
 ### Terminal 2: Run the Communication Bridge
 
 1. Open a second terminal and navigate to the bridge folder:
+   ```bash
    cd dune-dscs/wib/bridge
 
 2. Run the environment setup script:
+   ```bash
    source setup.sh
 
 3. Start the Python bridge:
+   ```bash
    python ignition_pybridge.py
 
 
