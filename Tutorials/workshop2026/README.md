@@ -6,14 +6,32 @@ Welcome to this hands-on tutorial! Here, we will show you how to build a hardwar
 
 ## Prerequisites
 
-Before starting, make sure you have the following installed:
-* **Visual Studio Code** with the **OPC-UA Browser** extension.
-* **Python 3.x**
-* Required Python libraries:
-  * `pyzmq`
-  * `asyncua` (or `opcua`)
-  * *(add other libraries here)*
+Before getting started, make sure you have **Visual Studio Code** installed with the **OPC-UA Browser** extension.
 
+### Required Python Libraries
+
+> [!WARNING]
+> **Important Protobuf Version:** Please ensure you use `protobuf` version **3.20 or lower** (version `3.19.6` is recommended to avoid compatibility issues).
+
+Upgrade `pip` and install the required dependencies using the commands below:
+
+```bash
+# Upgrade pip
+pip install --upgrade pip
+
+# Install specific Protobuf version
+pip install protobuf==3.19.6
+
+# Install OPC-UA libraries
+pip3 install asyncua
+pip install opcua
+
+# Install IPMI library
+pip install python-ipmi
+
+# Install SNMP library
+pip install pysnmp
+```
 ---
 
 ## Setup & Execution
@@ -48,6 +66,6 @@ Before starting, make sure you have the following installed:
 3. Start the Python bridge:
    ```bash
    python ignition_pybridge.py
-
+   ```
 
     
