@@ -43,7 +43,7 @@ pip install pysnmp
 1. Open a terminal and clone the repository:
    ```bash
    git clone [https://github.com/DUNE/dune-dscs.git](https://github.com/DUNE/dune-dscs.git)
-   cd dune-dscs/wib/wib-emulator
+   cd dune-dscs/Tutorials/workshop2026/wib-emulator
 
 2. Run the environment setup script:
    ```bash
@@ -57,7 +57,7 @@ pip install pysnmp
 
 1. Open a second terminal and navigate to the bridge folder:
    ```bash
-   cd dune-dscs/wib/bridge
+   cd dune-dscs/Tutorials/workshop2026/bridge
 
 2. Run the environment setup script:
    ```bash
