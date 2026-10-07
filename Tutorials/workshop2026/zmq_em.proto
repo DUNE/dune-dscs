@@ -2,7 +2,8 @@ syntax = "proto3";
 package zmq_em;
 
 message GetSensors{
-  double Temp1 = 1;
-  repeated double vol1 = 2; 
+    double Temp1 = 1;
+    repeated double vol1 = 2; 
+
 } 
 

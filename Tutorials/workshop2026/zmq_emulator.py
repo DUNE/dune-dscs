@@ -26,7 +26,7 @@ class WIBEmulator:
 
       print(f"[>] Got type_url = {msg_any.type_url}")
 
-      if msg_any.type_url.endswith("wib.GetSensors"):
+      if msg_any.type_url.endswith("zmq_em.GetSensors"):
             reply = zmq_em_pb2.GetSensors()
             # Voltages 
             reply.Temp1 = 24
