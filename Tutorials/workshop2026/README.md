@@ -6,7 +6,7 @@ Welcome to this hands-on tutorial! Here, we will show you how to build a hardwar
 
 ## Prerequisites
 
-Before getting started, make sure you have **Visual Studio Code** installed with the **OPC-UA Browser** extension.
+Before getting started, make sure you have **Ignition** or **Visual Studio Code** installed with the **OPC-UA Browser** extension.
 
 ### Required Python Libraries
 
@@ -21,16 +21,14 @@ pip install --upgrade pip
 
 # Install specific Protobuf version
 pip install protobuf==3.19.6
+sudo apt  install protobuf-compiler
 
 # Install OPC-UA libraries
 pip3 install asyncua
 pip install opcua
 
-# Install IPMI library
-pip install python-ipmi
+pip install PyYAML
 
-# Install SNMP library
-pip install pysnmp
 ```
 ---
 
@@ -42,26 +40,18 @@ pip install pysnmp
 
 1. Open a terminal and clone the repository:
    ```bash
-   git clone [https://github.com/DUNE/dune-dscs.git](https://github.com/DUNE/dune-dscs.git)
-   cd dune-dscs/Tutorials/workshop2026/wib-emulator
-
-2. Run the environment setup script:
-   ```bash
-   source setup.sh
+   git clone https://github.com/DUNE/dune-dscs.git
+   cd dune-dscs/Tutorials/workshop2026/
    
-3. Start the WIB emulator:
+2. Start the zmq emulator:
    ```bash
-   python wib_emulator_v3p1.py
+   python zmq_emulator.py
 
 ### Terminal 2: Run the Communication Bridge
 
-1. Open a second terminal and navigate to the bridge folder:
+1. Open a second terminal and go to the workshop folder:
    ```bash
-   cd dune-dscs/Tutorials/workshop2026/bridge
-
-2. Run the environment setup script:
-   ```bash
-   source setup.sh
+   cd dune-dscs/Tutorials/workshop2026/
 
 3. Start the Python bridge:
    ```bash
