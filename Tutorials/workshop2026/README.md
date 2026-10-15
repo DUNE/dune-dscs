@@ -58,4 +58,23 @@ pip install PyYAML
    python ignition_pybridge.py
    ```
 
-    
+
+## Troubleshooting
+
+### Protobuf Version Mismatch (`ImportError: cannot import name 'runtime_version'`)
+
+If you see an error like this when importing generated files:
+```bash
+ImportError: cannot import name 'runtime_version' from 'google.protobuf'
+ ```
+This occurs when your generated *_pb2.py file was created using a newer protoc compiler than the installed protobuf package version (3.19.6).
+
+To fix this issue:
+   ```bash
+pip install protobuf==3.19.6
+ ```
+and then do
+   ```bash
+protoc --proto_path=. --python_out=. ./zmq_em.proto
+ ```
+
