@@ -24,14 +24,18 @@ class WIBEmulator:
           print(f"[!] Error parsing protobuf Any: {e}")
           return None
 
-      print(f"[>] Got type_url = {msg_any.type_url}")
+#      print(f"[>] Got type_url = {msg_any.type_url}")
 
       if msg_any.type_url.endswith("zmq_em.GetSensors"):
             reply = zmq_em_pb2.GetSensors()
-            # Voltages 
+            # Add your sensors here
             reply.Temp1 = 24
             reply.vol1.append(12)
             reply.vol1.append(22)
+
+            print ("Temo1 = ", reply.Temp1)
+            print ("vol1[0] = ", reply.vol1[0])
+            print ("vol1[1] = ", reply.vol1[1])
 
             print("[OK] Sent sensor readings")
             return reply.SerializeToString()
@@ -49,24 +53,19 @@ def main():
     socket = context.socket(zmq.REP)
     socket.bind("tcp://*:5555")
 
-    print("WIB Emulator running at tcp://*:5555")
+    print("ZMQ Emulator running at tcp://*:5555")
 
     wib = WIBEmulator()
 
     while True:
         try:
             raw = socket.recv()
-            print(f"\n[<] Received {len(raw)} bytes")
-            print ("Before get handle request")
             
             l = len(raw)
            # calis = raw[28:32]
            # raw = raw[:32]
-            print("Printing raw",raw[:l])
             reply = wib.handle_request(raw)
-            print ("After get handle request")
             if reply:
-                print(f"Sending something {reply}")
                 socket.send(reply)
             else:
                 print ("Wrong message, the reply is empty")
