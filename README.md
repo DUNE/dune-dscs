@@ -35,7 +35,7 @@ git clone https://github.com/DUNE/dune-dscs.git && cd dune-dscs
 python -m venv .venv
 source .venv/bin/activate         # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python /path/to/script.py
+python Tutorials/workshop2026/zmq_emulator.py # Or whatever script you want
 ```
 
 ### Updating dependencies (maintainers)
