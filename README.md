@@ -6,6 +6,8 @@ The DSCS code wiki will be hosted at this repository, and the DUNE wiki will be 
 
 ## Setup
 
+If you encounter problems with the setup instructions below, please file an [issue](https://github.com/DUNE/dune-dscs/issues) with enough detail to reproduce your error from scratch.
+
 To make the python virtual environment consistent, we recommend using [uv](https://docs.astral.sh/uv/). To install uv without root on Linux or MacOS:
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
