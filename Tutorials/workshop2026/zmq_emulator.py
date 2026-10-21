@@ -24,6 +24,7 @@ class WIBEmulator:
 
       if msg_any.type_url.endswith("zmq_em.GetSensors"):
             reply = zmq_em_pb2.GetSensors()
+<<<<<<< Updated upstream
             # Define the value of your sensors here 
             reply.Temp1 = 24 
             reply.vol1.append(12)
@@ -31,6 +32,15 @@ class WIBEmulator:
             
             print ("Temp1 = ", reply.Temp1)
             print ("vol1[0] = ",  reply.vol1[0])
+=======
+            # Add your sensors here
+            reply.Temp1 = 24 + random.gauss(0,1)
+            reply.vol1.append(12+ random.gauss(0,1))
+            reply.vol1.append(22+ random.gauss(0,1))
+
+            print ("Temo1 = ", reply.Temp1)
+            print ("vol1[0] = ", reply.vol1[0])
+>>>>>>> Stashed changes
             print ("vol1[1] = ", reply.vol1[1])
             print("[OK] Sent sensor readings")
             return reply.SerializeToString()
