@@ -1,0 +1,20 @@
+[project]
+name = "dune-dscs"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "asyncua>=1.1.8",
+    "opcua>=0.98.13",
+    "protobuf>=7.36.1",
+    "pyyaml>=6.0.3",
+    "pyzmq>=27.2.0",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "ruff>=0.17.1",
+]
