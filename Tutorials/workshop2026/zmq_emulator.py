@@ -39,7 +39,7 @@ class WIBEmulator:
 
             print("[OK] Sent sensor readings")
             return reply.SerializeToString()
-  
+
       else:
           print("Unknown type:", msg_any.type_url)
           return b''
@@ -60,7 +60,7 @@ def main():
     while True:
         try:
             raw = socket.recv()
-            
+
             l = len(raw)
            # calis = raw[28:32]
            # raw = raw[:32]
