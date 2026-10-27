@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def bridge(monkeypatch):
     monkeypatch.chdir(ROOT / "bridge")
-    spec = importlib.util.spec_from_file_location("tested_bridge", ROOT / "bridge/ignition_pybidge.py")
+    spec = importlib.util.spec_from_file_location("tested_bridge", ROOT / "bridge/ignition_pybridge.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     context = module.context
