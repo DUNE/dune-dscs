@@ -30,7 +30,8 @@ uv run python Tutorials/workshop2026/zmq_emulator.py # Or whatever script you wa
 
 ### Without uv
 
-Before running the following commands, check your python version with `python --version`. If you don't have python 3.10 or greater, install it. If you can't install it, use the uv instructions above (uv will automatically install a suitable python version). 
+Check `python --version` first. Python 3.10 or newer is required.
+Use uv if you cannot install a suitable Python version yourself.
 
 ```bash
 git clone https://github.com/DUNE/dune-dscs.git && cd dune-dscs
