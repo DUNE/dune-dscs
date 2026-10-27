@@ -1,5 +1,5 @@
 wibs:
   - tpc: 0
     wib: 1
-    host: localhost
+    host: "iceberg01"
     port: 5555

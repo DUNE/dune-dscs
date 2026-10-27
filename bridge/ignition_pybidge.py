@@ -142,7 +142,7 @@ def send_power_command(config):
     return status
 
 
-def wib_request(port, req_msg, resp_msg_class, label, use_any_response=True):
+def wib_request(host, port, req_msg, resp_msg_class, label, use_any_response=True):
     """
     Send `req_msg` to the WIB backend on `port` and return the parsed response,
     or None on timeout/error. Opens a fresh REQ socket per call so a single
@@ -150,7 +150,7 @@ def wib_request(port, req_msg, resp_msg_class, label, use_any_response=True):
     """
     wib_socket = context.socket(zmq.REQ)
     try:
-        wib_socket.connect(f"tcp://localhost:{port}")
+        wib_socket.connect(f"tcp://{host}:{port}")
         wib_socket.setsockopt(zmq.RCVTIMEO, 2000)
 
         req_any = Any()
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     WIBS = {}
     for wib_info in cfg.get_wibs():
         key = (wib_info["tpc"], wib_info["wib"])
-        WIBS[key] = WIB(tpc=wib_info["tpc"], wib=wib_info["wib"], host="localhost", port=wib_info["port"])
+        WIBS[key] = WIB(tpc=wib_info["tpc"], wib=wib_info["wib"], host=wib_info["host"], port=wib_info["port"])
 
     Nodes = {}
     for (tpc, iwib), wib in WIBS.items():
@@ -281,23 +281,24 @@ if __name__ == "__main__":
             for wib_info in cfg.get_wibs():
                 tpc = wib_info["tpc"]
                 iwib = wib_info["wib"]
+                host = wib_info["host"]
                 port = wib_info["port"]
                 wib_ob = WIBS[(tpc, iwib)]
 
-                resp = wib_request(port, wib_pb2.GetSWVersion(), wib_pb2.GetSWVersion.Version, "Version")
+                resp = wib_request(host, port, wib_pb2.GetSWVersion(), wib_pb2.GetSWVersion.Version, "Version")
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 
-                resp = wib_request(port, wib_pb2.GetTimingStatus(), wib_pb2.GetTimingStatus.TimingStatus, "Timing Status")
+                resp = wib_request(host, port, wib_pb2.GetTimingStatus(), wib_pb2.GetTimingStatus.TimingStatus, "Timing Status")
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 
                 time.sleep(0.1)
-                resp = wib_request(port, wib_pb2.GetSensors(), wib_pb2.GetSensors.Sensors, "Sensors", use_any_response=False)
+                resp = wib_request(host, port, wib_pb2.GetSensors(), wib_pb2.GetSensors.Sensors, "Sensors", use_any_response=False)
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 
-                resp = wib_request(port, wib_pb2.Peek(), wib_pb2.Peek, "Peek")
+                resp = wib_request(host, port, wib_pb2.Peek(), wib_pb2.Peek, "Peek")
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 
@@ -311,13 +312,13 @@ if __name__ == "__main__":
                 if count == 10:
                     poke_msg.addr = 0xDEAD
                     poke_msg.value = 1
-                wib_request(port, poke_msg, wib_pb2.RegValue, "Poke")
+                wib_request(host, port, poke_msg, wib_pb2.RegValue, "Poke")
 
-                resp = wib_request(port, wib_pb2.Peek(), wib_pb2.Peek, "Peek (post-poke)")
+                resp = wib_request(host, port, wib_pb2.Peek(), wib_pb2.Peek, "Peek (post-poke)")
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 
-                resp = wib_request(port, wib_pb2.GetTimestamp(), wib_pb2.GetTimestamp.Timestamp, "Timestamp")
+                resp = wib_request(host, port, wib_pb2.GetTimestamp(), wib_pb2.GetTimestamp.Timestamp, "Timestamp")
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 

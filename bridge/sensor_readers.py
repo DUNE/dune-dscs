@@ -8,9 +8,9 @@ are added, only the config.
 import asyncio
 import socket
 
-import pyipmi
-import pyipmi.interfaces
-import pyipmi.sdr
+#import pyipmi
+#import pyipmi.interfaces
+#import pyipmi.sdr
 
 from pysnmp.hlapi.v3arch.asyncio import (
     SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
@@ -33,6 +33,13 @@ class IPMIReader:
         self._sdr_by_name = {}
 
     def connect(self):
+        try:
+            import pyipmi
+            import pyipmi.interfaces
+            import pyipmi.sdr
+        except ImportError as e:
+            raise RuntimeError(f"pyipmi library is not available: {e}")
+
         interface = pyipmi.interfaces.create_interface("rmcp")
         ipmi = pyipmi.create_connection(interface)
         ipmi.target = pyipmi.Target(0x20)
