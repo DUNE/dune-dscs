@@ -3,7 +3,6 @@ sys.path.insert(0, "..")
 import time
 from opcua import Server, ua
 import zmq
-from google.protobuf.any_pb2 import Any
 import wib_pb2
 from wib_config import WIBConfig
 from wib_sensor_config import WIBSensorConfig
@@ -11,7 +10,6 @@ from devices_config import DevicesConfig
 from sensor_readers import IPMIReader, SNMPReader, SCPIReader
 
 context = zmq.Context()
-socket = context.socket(zmq.REQ)
 
 cfg = WIBConfig()
 print("Loaded WIBs from config:")
@@ -38,11 +36,10 @@ SENSOR_MAP_Temp = wib_sensor_cfg.get_temperatures()
 VERSION_MAP = wib_sensor_cfg.get_version()
 TIMESTAMP_MAP = wib_sensor_cfg.get_timestamp()
 TIMING_STATUS_MAP = wib_sensor_cfg.get_timing_status()
-PEEK_MAP = wib_sensor_cfg.get_peek()
 print("Loaded WIB sensor fields from config:")
 print(f"  voltages={len(SENSOR_MAP_V)} temperatures={len(SENSOR_MAP_Temp)} "
       f"version={len(VERSION_MAP)} timestamp={len(TIMESTAMP_MAP)} "
-      f"timing_status={len(TIMING_STATUS_MAP)} peek={len(PEEK_MAP)}")
+      f"timing_status={len(TIMING_STATUS_MAP)}")
 
 
 class WIB:
@@ -53,10 +50,9 @@ class WIB:
         self.port = port
         self.voltages = {name: [0.0] * n for name, n in SENSOR_MAP_V.items()}
         self.temperatures = {name: [0.0] * n for name, n in SENSOR_MAP_Temp.items()}
-        self.version = {name: [0.0] * n for name, n in VERSION_MAP.items()}
-        self.timestamp = {name: [0.0] * n for name, n in TIMESTAMP_MAP.items()}
-        self.timingstatus = {name: [0.0] * n for name, n in TIMING_STATUS_MAP.items()}
-        self.peek = {name: [0.0] * n for name, n in PEEK_MAP.items()}
+        self.version = {name: [""] * n for name, n in VERSION_MAP.items()}
+        self.timestamp = {name: [0] * n for name, n in TIMESTAMP_MAP.items()}
+        self.timingstatus = {name: [0] * n for name, n in TIMING_STATUS_MAP.items()}
 
 
 def initialize_nodes(parent, idx, nodes, mapping, ptc, iwib, label):
@@ -65,13 +61,11 @@ def initialize_nodes(parent, idx, nodes, mapping, ptc, iwib, label):
         obj = parent.add_object(idx, name)
         nodes[name] = []
 
-        init_value = 0 if name == "addr" else 0.0
         n = len(values) 
         for i in range(len(values)):
             leaf = name if n == 1 else f"{name}_{i}"
             nodeid = ua.NodeId(f"wib_{iwib}.{label}.{leaf}", idx)
-            var = obj.add_variable(nodeid, f"{name}_{i}", init_value)
-            var.set_writable()
+            var = obj.add_variable(nodeid, f"{name}_{i}", values[i])
             nodes[name].append(var)
 
     return nodes
@@ -106,7 +100,6 @@ def initialize_simple_nodes(parent, idx, device_id, sensor_names):
     for name in sensor_names:
         nodeid = ua.NodeId(f"{device_id}/{name}", idx)
         var = parent.add_variable(nodeid, name, 0.0)
-        var.set_writable()
         nodes[name] = var
     return nodes
 
@@ -119,35 +112,18 @@ def update_simple_nodes(nodes, values):
             node.set_value(value)
 
 
-def send_power_command(config):
-    """Send a PowerWIB command over the shared REQ socket. Not wired into the polling loop."""
-    msg = wib_pb2.PowerWIB()
-    msg.femb0 = config["femb0"]
-    msg.femb1 = config["femb1"]
-    msg.femb2 = config["femb2"]
-    msg.femb3 = config["femb3"]
-    msg.cold = config["cold"]
-    msg.stage = config["stage"]
-
-    any_msg = Any()
-    any_msg.Pack(msg)
-    socket.send(any_msg.SerializeToString())
-
-    resp_bytes = socket.recv()
-    resp_any = Any()
-    resp_any.ParseFromString(resp_bytes)
-
-    status = wib_pb2.Status()
-    resp_any.Unpack(status)
-    return status
-
-
 def wib_request(port, req_msg, resp_msg_class, label):
     """
-    Send `req_msg` to the WIB backend on `port` and return the parsed response,
+    Send a telemetry request to the WIB on `port` and return the parsed response,
     or None on timeout/error. Opens a fresh REQ socket per call so a single
     slow/dead backend can't desync the REQ/REP state for the others.
     """
+    if type(req_msg) not in (
+        wib_pb2.GetSWVersion, wib_pb2.GetTimingStatus,
+        wib_pb2.GetSensors, wib_pb2.GetTimestamp,
+    ):
+        raise ValueError("The monitoring bridge only accepts telemetry requests")
+
     wib_socket = context.socket(zmq.REQ)
     try:
         wib_socket.connect(f"tcp://localhost:{port}")
@@ -173,6 +149,19 @@ def wib_request(port, req_msg, resp_msg_class, label):
         wib_socket.close(linger=0)
 
 
+def poll_wib(wib, nodes_by_wib):
+    """Read telemetry and update the bridge's own OPC-UA values."""
+    for request, reply_type, label in (
+        (wib_pb2.GetSWVersion, wib_pb2.GetSWVersion.Version, "Version"),
+        (wib_pb2.GetTimingStatus, wib_pb2.GetTimingStatus.TimingStatus, "Timing Status"),
+        (wib_pb2.GetSensors, wib_pb2.GetSensors.Sensors, "Sensors"),
+        (wib_pb2.GetTimestamp, wib_pb2.GetTimestamp.Timestamp, "Timestamp"),
+    ):
+        reply = wib_request(wib.port, request(), reply_type, label)
+        if reply is not None:
+            update_node(reply, nodes_by_wib, wib)
+
+
 if __name__ == "__main__":
     server = Server()
     server.set_endpoint("opc.tcp://0.0.0.0:4840/freeopcua/server/")
@@ -196,7 +185,6 @@ if __name__ == "__main__":
         initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.version, tpc, iwib, "sw_version")
         initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.timestamp, tpc, iwib, "timestamp")
         initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.timingstatus, tpc, iwib, "timing")
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.peek, tpc, iwib, "peek")
 
     # IPMI/SNMP devices are entirely config-driven (devices.yaml): each
     # entry there becomes one OPC UA object with one variable per listed
@@ -274,45 +262,8 @@ if __name__ == "__main__":
             for wib_info in cfg.get_wibs():
                 tpc = wib_info["tpc"]
                 iwib = wib_info["wib"]
-                port = wib_info["port"]
                 wib_ob = WIBS[(tpc, iwib)]
-
-                resp = wib_request(port, wib_pb2.GetSWVersion(), wib_pb2.GetSWVersion.Version, "Version")
-                if resp is not None:
-                    update_node(resp, Nodes, wib_ob)
-
-                resp = wib_request(port, wib_pb2.GetTimingStatus(), wib_pb2.GetTimingStatus.TimingStatus, "Timing Status")
-                if resp is not None:
-                    update_node(resp, Nodes, wib_ob)
-
-                time.sleep(0.1)
-                resp = wib_request(port, wib_pb2.GetSensors(), wib_pb2.GetSensors.Sensors, "Sensors")
-                if resp is not None:
-                    update_node(resp, Nodes, wib_ob)
-
-                resp = wib_request(port, wib_pb2.Peek(), wib_pb2.RegValue, "Peek")
-                if resp is not None:
-                    update_node(resp, Nodes, wib_ob)
-
-                poke_msg = wib_pb2.Poke()
-                if count % 2 == 0:
-                    poke_msg.addr = 0x0000
-                    poke_msg.value = count
-                else:
-                    poke_msg.addr = 0x0004
-                    poke_msg.value = count
-                if count == 10:
-                    poke_msg.addr = 0xDEAD
-                    poke_msg.value = 1
-                wib_request(port, poke_msg, wib_pb2.RegValue, "Poke")
-
-                resp = wib_request(port, wib_pb2.Peek(), wib_pb2.RegValue, "Peek (post-poke)")
-                if resp is not None:
-                    update_node(resp, Nodes, wib_ob)
-
-                resp = wib_request(port, wib_pb2.GetTimestamp(), wib_pb2.GetTimestamp.Timestamp, "Timestamp")
-                if resp is not None:
-                    update_node(resp, Nodes, wib_ob)
+                poll_wib(wib_ob, Nodes)
 
             now = time.time()
             for poller in Pollers:
@@ -330,4 +281,5 @@ if __name__ == "__main__":
             if close is not None:
                 close()
         server.stop()
+        context.term()
         print("Server stopped")
