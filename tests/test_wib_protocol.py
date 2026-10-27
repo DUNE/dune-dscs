@@ -31,7 +31,11 @@ def test_power_command_returns_status_and_keeps_state_on_the_emulator():
     emulator = WIBEmulator()
     reply = request(emulator, pb.PowerWIB(femb0=True, cold=True, stage=2), pb.Status)
     assert reply.success
-    assert emulator.state == {"femb": [True, False, False, False], "cold": True, "stage": 2}
+    assert emulator.state == {
+        "femb": [True, False, False, False],
+        "cold": True,
+        "stage": 2,
+    }
 
 
 @pytest.mark.parametrize("data", [b"\xff", b"", pb.Empty().SerializeToString()])

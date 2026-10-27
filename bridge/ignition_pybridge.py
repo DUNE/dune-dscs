@@ -1,13 +1,15 @@
 import sys
+
 sys.path.insert(0, "..")
 import time
-from opcua import Server, ua
-import zmq
+
 import wib_pb2
+import zmq
+from devices_config import DevicesConfig
+from opcua import Server, ua
+from sensor_readers import IPMIReader, SCPIReader, SNMPReader
 from wib_config import WIBConfig
 from wib_sensor_config import WIBSensorConfig
-from devices_config import DevicesConfig
-from sensor_readers import IPMIReader, SNMPReader, SCPIReader
 
 context = zmq.Context()
 
@@ -19,13 +21,19 @@ for wib in cfg.get_wibs():
 devices_cfg = DevicesConfig()
 print("Loaded IPMI devices from config:")
 for dev in devices_cfg.get_ipmi_devices():
-    print(f"  {dev['id']} -> {dev['host']}:{dev.get('port', 623)} ({len(dev.get('sensors', []))} sensors)")
+    print(
+        f"  {dev['id']} -> {dev['host']}:{dev.get('port', 623)} ({len(dev.get('sensors', []))} sensors)"
+    )
 print("Loaded SNMP devices from config:")
 for dev in devices_cfg.get_snmp_devices():
-    print(f"  {dev['id']} -> {dev['host']}:{dev.get('port', 161)} ({len(dev.get('sensors', []))} sensors)")
+    print(
+        f"  {dev['id']} -> {dev['host']}:{dev.get('port', 161)} ({len(dev.get('sensors', []))} sensors)"
+    )
 print("Loaded SCPI devices from config:")
 for dev in devices_cfg.get_scpi_devices():
-    print(f"  {dev['id']} -> {dev['host']}:{dev.get('port', 5025)} ({len(dev.get('sensors', []))} sensors)")
+    print(
+        f"  {dev['id']} -> {dev['host']}:{dev.get('port', 5025)} ({len(dev.get('sensors', []))} sensors)"
+    )
 
 # Which WIB protobuf fields become OPC UA nodes, and how many array
 # elements each one gets, is config-driven (wib_sensors.yaml) rather than
@@ -37,9 +45,11 @@ VERSION_MAP = wib_sensor_cfg.get_version()
 TIMESTAMP_MAP = wib_sensor_cfg.get_timestamp()
 TIMING_STATUS_MAP = wib_sensor_cfg.get_timing_status()
 print("Loaded WIB sensor fields from config:")
-print(f"  voltages={len(SENSOR_MAP_V)} temperatures={len(SENSOR_MAP_Temp)} "
-      f"version={len(VERSION_MAP)} timestamp={len(TIMESTAMP_MAP)} "
-      f"timing_status={len(TIMING_STATUS_MAP)}")
+print(
+    f"  voltages={len(SENSOR_MAP_V)} temperatures={len(SENSOR_MAP_Temp)} "
+    f"version={len(VERSION_MAP)} timestamp={len(TIMESTAMP_MAP)} "
+    f"timing_status={len(TIMING_STATUS_MAP)}"
+)
 
 
 class WIB:
@@ -61,7 +71,7 @@ def initialize_nodes(parent, idx, nodes, mapping, ptc, iwib, label):
         obj = parent.add_object(idx, name)
         nodes[name] = []
 
-        n = len(values) 
+        n = len(values)
         for i in range(len(values)):
             leaf = name if n == 1 else f"{name}_{i}"
             nodeid = ua.NodeId(f"wib_{iwib}.{label}.{leaf}", idx)
@@ -69,6 +79,7 @@ def initialize_nodes(parent, idx, nodes, mapping, ptc, iwib, label):
             nodes[name].append(var)
 
     return nodes
+
 
 def update_node(resp_msg, nodes_by_wib, wib):
     """Copy the fields of a protobuf response into the OPC UA nodes for one WIB."""
@@ -119,8 +130,10 @@ def wib_request(port, req_msg, resp_msg_class, label):
     slow/dead backend can't desync the REQ/REP state for the others.
     """
     if type(req_msg) not in (
-        wib_pb2.GetSWVersion, wib_pb2.GetTimingStatus,
-        wib_pb2.GetSensors, wib_pb2.GetTimestamp,
+        wib_pb2.GetSWVersion,
+        wib_pb2.GetTimingStatus,
+        wib_pb2.GetSensors,
+        wib_pb2.GetTimestamp,
     ):
         raise ValueError("The monitoring bridge only accepts telemetry requests")
 
@@ -153,7 +166,11 @@ def poll_wib(wib, nodes_by_wib):
     """Read telemetry and update the bridge's own OPC-UA values."""
     for request, reply_type, label in (
         (wib_pb2.GetSWVersion, wib_pb2.GetSWVersion.Version, "Version"),
-        (wib_pb2.GetTimingStatus, wib_pb2.GetTimingStatus.TimingStatus, "Timing Status"),
+        (
+            wib_pb2.GetTimingStatus,
+            wib_pb2.GetTimingStatus.TimingStatus,
+            "Timing Status",
+        ),
         (wib_pb2.GetSensors, wib_pb2.GetSensors.Sensors, "Sensors"),
         (wib_pb2.GetTimestamp, wib_pb2.GetTimestamp.Timestamp, "Timestamp"),
     ):
@@ -173,18 +190,33 @@ if __name__ == "__main__":
     WIBS = {}
     for wib_info in cfg.get_wibs():
         key = (wib_info["tpc"], wib_info["wib"])
-        WIBS[key] = WIB(tpc=wib_info["tpc"], wib=wib_info["wib"], host="localhost", port=wib_info["port"])
+        WIBS[key] = WIB(
+            tpc=wib_info["tpc"],
+            wib=wib_info["wib"],
+            host="localhost",
+            port=wib_info["port"],
+        )
 
     Nodes = {}
     for (tpc, iwib), wib in WIBS.items():
         Nodes[(tpc, iwib)] = {}
         wib_obj = objects.add_object(idx, f"WIB{iwib}")
 
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.voltages, tpc, iwib, "sensors")
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.temperatures, tpc, iwib, "sensors")
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.version, tpc, iwib, "sw_version")
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.timestamp, tpc, iwib, "timestamp")
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.timingstatus, tpc, iwib, "timing")
+        initialize_nodes(
+            wib_obj, idx, Nodes[(tpc, iwib)], wib.voltages, tpc, iwib, "sensors"
+        )
+        initialize_nodes(
+            wib_obj, idx, Nodes[(tpc, iwib)], wib.temperatures, tpc, iwib, "sensors"
+        )
+        initialize_nodes(
+            wib_obj, idx, Nodes[(tpc, iwib)], wib.version, tpc, iwib, "sw_version"
+        )
+        initialize_nodes(
+            wib_obj, idx, Nodes[(tpc, iwib)], wib.timestamp, tpc, iwib, "timestamp"
+        )
+        initialize_nodes(
+            wib_obj, idx, Nodes[(tpc, iwib)], wib.timingstatus, tpc, iwib, "timing"
+        )
 
     # IPMI/SNMP devices are entirely config-driven (devices.yaml): each
     # entry there becomes one OPC UA object with one variable per listed
@@ -204,12 +236,14 @@ if __name__ == "__main__":
         )
         dev_obj = objects.add_object(idx, dev_id)
         nodes = initialize_simple_nodes(dev_obj, idx, dev_id, sensor_names)
-        Pollers.append({
-            "reader": reader,
-            "nodes": nodes,
-            "poll_interval": dev.get("poll_interval", 5),
-            "next_poll": 0.0,
-        })
+        Pollers.append(
+            {
+                "reader": reader,
+                "nodes": nodes,
+                "poll_interval": dev.get("poll_interval", 5),
+                "next_poll": 0.0,
+            }
+        )
 
     for dev in devices_cfg.get_snmp_devices():
         dev_id = dev["id"]
@@ -224,12 +258,14 @@ if __name__ == "__main__":
         )
         dev_obj = objects.add_object(idx, dev_id)
         nodes = initialize_simple_nodes(dev_obj, idx, dev_id, sensor_names)
-        Pollers.append({
-            "reader": reader,
-            "nodes": nodes,
-            "poll_interval": dev.get("poll_interval", 5),
-            "next_poll": 0.0,
-        })
+        Pollers.append(
+            {
+                "reader": reader,
+                "nodes": nodes,
+                "poll_interval": dev.get("poll_interval", 5),
+                "next_poll": 0.0,
+            }
+        )
 
     for dev in devices_cfg.get_scpi_devices():
         dev_id = dev["id"]
@@ -242,12 +278,14 @@ if __name__ == "__main__":
         )
         dev_obj = objects.add_object(idx, dev_id)
         nodes = initialize_simple_nodes(dev_obj, idx, dev_id, sensor_names)
-        Pollers.append({
-            "reader": reader,
-            "nodes": nodes,
-            "poll_interval": dev.get("poll_interval", 5),
-            "next_poll": 0.0,
-        })
+        Pollers.append(
+            {
+                "reader": reader,
+                "nodes": nodes,
+                "poll_interval": dev.get("poll_interval", 5),
+                "next_poll": 0.0,
+            }
+        )
 
     server.start()
     print(f"Server started at {server.endpoint}")
