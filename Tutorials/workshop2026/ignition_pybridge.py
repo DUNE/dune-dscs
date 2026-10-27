@@ -1,10 +1,12 @@
 import sys
+
 sys.path.insert(0, "..")
 import time
-from opcua import Server, ua
+
 import zmq
-from google.protobuf.any_pb2 import Any
 import zmq_em_pb2
+from google.protobuf.any_pb2 import Any
+from opcua import Server, ua
 from zmq_devices_config import ZMQDevicesConfig
 from zmq_sensor_config import ZMQSensorConfig
 
@@ -12,15 +14,16 @@ context = zmq.Context()
 socket = context.socket(zmq.REQ)
 
 cfg = ZMQDevicesConfig()
-#print("Loaded WIBs from config:")
-#for wib in cfg.get_devices():
+# print("Loaded WIBs from config:")
+# for wib in cfg.get_devices():
 #    print(f"  TPC{wib['tpc']} WIB{wib['wib']} -> port {wib['port']}")
 
 
 zmq_sensor_cfg = ZMQSensorConfig()
 SENSOR_MAP_V = zmq_sensor_cfg.get_voltages()
 SENSOR_MAP_Temp = zmq_sensor_cfg.get_temperatures()
-#print("Loaded WIB sensor fields from config:")
+# print("Loaded WIB sensor fields from config:")
+
 
 class ZMQ:
     def __init__(self, tpc, dev, host, port):
@@ -30,6 +33,7 @@ class ZMQ:
         self.port = port
         self.voltages = {name: [0.0] * n for name, n in SENSOR_MAP_V.items()}
         self.temperatures = {name: [0.0] * n for name, n in SENSOR_MAP_Temp.items()}
+
 
 def initialize_nodes(parent, idx, nodes, mapping, tpc, izmq):
     """Create one OPC UA object + variables per entry in `mapping`, under `parent`."""
@@ -117,7 +121,12 @@ if __name__ == "__main__":
     ZMQDS = {}
     for zmqd_info in cfg.get_devices():
         key = (zmqd_info["tpc"], zmqd_info["dev"])
-        ZMQDS[key] = ZMQ(tpc=zmqd_info["tpc"], dev=zmqd_info["dev"], host="localhost", port=zmqd_info["port"])
+        ZMQDS[key] = ZMQ(
+            tpc=zmqd_info["tpc"],
+            dev=zmqd_info["dev"],
+            host="localhost",
+            port=zmqd_info["port"],
+        )
     # Initialize the nodes
     Nodes = {}
     for (tpc, izmq), zmqd in ZMQDS.items():
@@ -126,7 +135,6 @@ if __name__ == "__main__":
 
         initialize_nodes(zmq_obj, idx, Nodes[(tpc, izmq)], zmqd.voltages, tpc, izmq)
         initialize_nodes(zmq_obj, idx, Nodes[(tpc, izmq)], zmqd.temperatures, tpc, izmq)
-
 
     server.start()
     print(f"Server started at {server.endpoint}")
@@ -144,11 +152,16 @@ if __name__ == "__main__":
                 port = zmqd_info["port"]
                 wib_ob = ZMQDS[(tpc, izmq)]
 
-                #time.sleep(0.1)
-                resp = zmqd_request(port, zmq_em_pb2.GetSensors(), zmq_em_pb2.GetSensors, "Sensors", use_any_response=False)
+                # time.sleep(0.1)
+                resp = zmqd_request(
+                    port,
+                    zmq_em_pb2.GetSensors(),
+                    zmq_em_pb2.GetSensors,
+                    "Sensors",
+                    use_any_response=False,
+                )
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
-
 
     except KeyboardInterrupt:
         pass
