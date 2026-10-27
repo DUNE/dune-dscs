@@ -22,12 +22,18 @@ opcua==0.98.13
     # via dune-dscs
 protobuf==7.36.2
     # via dune-dscs
-pycparser==3.11 ; (implementation_name != 'PyPy' and platform_python_implementation != 'PyPy') or (implementation_name == 'pypy' and platform_python_implementation == 'PyPy')
+pyasn1==0.6.5
+    # via pysnmp
+pycparser==3.11 ; implementation_name == 'pypy' or (implementation_name != 'PyPy' and implementation_name != 'pypy' and platform_python_implementation != 'PyPy')
     # via cffi
+pysnmp==7.1.30
+    # via dune-dscs
 python-dateutil==2.9.0.post0
     # via
     #   asyncua
     #   opcua
+python-ipmi==0.6.1
+    # via dune-dscs
 pytz==2026.5
     # via
     #   asyncua

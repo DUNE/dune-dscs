@@ -6,6 +6,8 @@ dependencies = [
     "asyncua>=1.1.8",
     "opcua>=0.98.13",
     "protobuf>=7.36.1",
+    "pysnmp>=7.1.30,<8",
+    "python-ipmi>=0.6.1,<0.7",
     "pyyaml>=6.0.3",
     "pyzmq>=27.2.0",
 ]
