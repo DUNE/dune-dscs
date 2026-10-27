@@ -59,22 +59,22 @@ class WIB:
         self.peek = {name: [0.0] * n for name, n in PEEK_MAP.items()}
 
 
-def initialize_nodes(parent, idx, nodes, mapping, tpc, iwib):
+def initialize_nodes(parent, idx, nodes, mapping, ptc, iwib, label):
     """Create one OPC UA object + variables per entry in `mapping`, under `parent`."""
     for name, values in mapping.items():
         obj = parent.add_object(idx, name)
         nodes[name] = []
 
         init_value = 0 if name == "addr" else 0.0
-
+        n = len(values) 
         for i in range(len(values)):
-            nodeid = ua.NodeId(f"TPC{tpc}/WIB{iwib}/{name}/{i}", idx)
+            leaf = name if n == 1 else f"{name}_{i}"
+            nodeid = ua.NodeId(f"wib_{iwib}.{label}.{leaf}", idx)
             var = obj.add_variable(nodeid, f"{name}_{i}", init_value)
             var.set_writable()
             nodes[name].append(var)
 
     return nodes
-
 
 def update_node(resp_msg, nodes_by_wib, wib):
     """Copy the fields of a protobuf response into the OPC UA nodes for one WIB."""
@@ -185,7 +185,7 @@ if __name__ == "__main__":
     server.set_endpoint("opc.tcp://0.0.0.0:4840/freeopcua/server/")
     server.set_server_name("WIB-Ignition Bridge Server")
 
-    idx = server.register_namespace("")
+    idx = server.register_namespace("OPCUASERVER")
     objects = server.get_objects_node()
 
     WIBS = {}
@@ -198,12 +198,12 @@ if __name__ == "__main__":
         Nodes[(tpc, iwib)] = {}
         wib_obj = objects.add_object(idx, f"WIB{iwib}")
 
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.voltages, tpc, iwib)
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.temperatures, tpc, iwib)
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.version, tpc, iwib)
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.timestamp, tpc, iwib)
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.timingstatus, tpc, iwib)
-        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.peek, tpc, iwib)
+        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.voltages, tpc, iwib, "sensors")
+        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.temperatures, tpc, iwib, "sensors")
+        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.version, tpc, iwib, "sw_version")
+        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.timestamp, tpc, iwib, "timestamp")
+        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.timingstatus, tpc, iwib, "timing")
+        initialize_nodes(wib_obj, idx, Nodes[(tpc, iwib)], wib.peek, tpc, iwib, "peek")
 
     # IPMI/SNMP devices are entirely config-driven (devices.yaml): each
     # entry there becomes one OPC UA object with one variable per listed
