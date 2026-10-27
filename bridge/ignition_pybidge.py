@@ -142,7 +142,7 @@ def send_power_command(config):
     return status
 
 
-def wib_request(port, req_msg, resp_msg_class, label, use_any_response=True):
+def wib_request(port, req_msg, resp_msg_class, label):
     """
     Send `req_msg` to the WIB backend on `port` and return the parsed response,
     or None on timeout/error. Opens a fresh REQ socket per call so a single
@@ -153,21 +153,14 @@ def wib_request(port, req_msg, resp_msg_class, label, use_any_response=True):
         wib_socket.connect(f"tcp://localhost:{port}")
         wib_socket.setsockopt(zmq.RCVTIMEO, 2000)
 
-        req_any = Any()
-        req_any.Pack(req_msg)
-        wib_socket.send(req_any.SerializeToString(), flags=zmq.DONTWAIT)
+        command = wib_pb2.Command()
+        command.cmd.Pack(req_msg)
+        wib_socket.send(command.SerializeToString(), flags=zmq.DONTWAIT)
 
         resp_bytes = wib_socket.recv()
 
         resp_msg = resp_msg_class()
-        if use_any_response:
-            resp_any = Any()
-            resp_any.ParseFromString(resp_bytes)
-            resp_any.Unpack(resp_msg)
-        else:
-            # The Sensors backend replies with a raw serialized message,
-            # not wrapped in google.protobuf.Any.
-            resp_msg.ParseFromString(resp_bytes)
+        resp_msg.ParseFromString(resp_bytes)
 
         return resp_msg
     except zmq.error.Again:
@@ -293,11 +286,11 @@ if __name__ == "__main__":
                     update_node(resp, Nodes, wib_ob)
 
                 time.sleep(0.1)
-                resp = wib_request(port, wib_pb2.GetSensors(), wib_pb2.GetSensors.Sensors, "Sensors", use_any_response=False)
+                resp = wib_request(port, wib_pb2.GetSensors(), wib_pb2.GetSensors.Sensors, "Sensors")
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 
-                resp = wib_request(port, wib_pb2.Peek(), wib_pb2.Peek, "Peek")
+                resp = wib_request(port, wib_pb2.Peek(), wib_pb2.RegValue, "Peek")
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 
@@ -313,7 +306,7 @@ if __name__ == "__main__":
                     poke_msg.value = 1
                 wib_request(port, poke_msg, wib_pb2.RegValue, "Poke")
 
-                resp = wib_request(port, wib_pb2.Peek(), wib_pb2.Peek, "Peek (post-poke)")
+                resp = wib_request(port, wib_pb2.Peek(), wib_pb2.RegValue, "Peek (post-poke)")
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 

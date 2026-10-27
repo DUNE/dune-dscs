@@ -46,3 +46,8 @@
 *.swo
 *.bin
 *.db
+
+# Local Python environment and test output
+.venv/
+__pycache__/
+.pytest_cache/

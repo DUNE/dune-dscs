@@ -2,6 +2,7 @@ import zmq
 import wib_pb2
 from datetime import datetime
 from google.protobuf.any_pb2 import Any
+from google.protobuf.message import DecodeError
 from google.protobuf.internal.decoder import _DecodeVarint
 import random
 
@@ -73,6 +74,8 @@ def variation(isstable,stdev):
 
 class WIBEmulator:
     def __init__(self):
+        self.registers = {0x0000: 123, 0x0004: 456}
+        self.state = {"femb": [False, False, False, False], "cold": False, "stage": 0}
         self.powered = True
         self.booting = False
         self.boot_start = 0
@@ -102,38 +105,17 @@ class WIBEmulator:
     #def handle_request(self, raw):
     def handle_request(self, raw_msg: bytes):
 
+      command = wib_pb2.Command()
       try:
-          raw_str = raw_msg.decode("utf-8").strip().strip('"')
-      except Exception:
-          raw_str = ""
-      msg_any = Any()
-      try:
-          msg_any.ParseFromString(raw_msg)
-      except Exception as e:
-          print(f"[!] Error parsing protobuf Any: {e}")
-          return None
+          command.ParseFromString(raw_msg)
+      except DecodeError as e:
+          print(f"[!] Error parsing WIB Command: {e}")
+          return b''
+      msg_any = command.cmd
 
       print(f"[>] Got type_url = {msg_any.type_url}")
 
-#      try:
-#        payload = extract_any_from_frame(raw)
-#      except Exception as e:
-#        print("Frame decode failed:", e)
-#        return b''
-#      print ("payload", payload)
-#      msg_any = Any()
-#      try:
-#        msg_any.ParseFromString(payload)
-#      except Exception as e:
-#        print("Failed parsing Any:", e)
-#        return b''
-#
-#      # Normalize type_url
-#      type_url = msg_any.type_url.strip().strip('"').strip("'").lstrip('$')
-#      print("Received Any:", type_url)
-#
-  
-      if msg_any.type_url.endswith("wib.Peek"):
+      if msg_any.Is(wib_pb2.Peek.DESCRIPTOR):
 
       # -------- Read request --------
           req = wib_pb2.Peek()
@@ -144,51 +126,31 @@ class WIBEmulator:
               print("[!] No payload in request")
       
           # -------- Build reply --------
-          reply = wib_pb2.Peek()
-          reply.addr = handle_peek(self.ADDRESSGLOVAL)
+          reply = wib_pb2.RegValue()
+          reply.addr = req.addr
+          reply.value = self.registers.get(req.addr, 0)
       
           print(f"REPLY addr: {reply.addr}")
       
           # -------- Send reply --------
-          resp_any = Any()
-          resp_any.Pack(reply)
+          return reply.SerializeToString()
       
-          return resp_any.SerializeToString()
-      
-      elif msg_any.type_url.endswith("wib.Poke"):
+      elif msg_any.Is(wib_pb2.Poke.DESCRIPTOR):
       # -------- Read request --------
           req = wib_pb2.Poke()
           msg_any.Unpack(req)
 
          
           print(f"REQ addr: {req.addr}, value: {req.value}")
-          print ("Antes del apagado")
-          if req.addr == POWER_CTRL_ADDR:
-              if req.value == 1:
-                  self.power_cycle()
-                  print("[WIB] Power cycle triggered via POKE")
-          # Apply write
-
-          handle_poke(req.addr, req.value)
+          self.registers[req.addr] = req.value
 
           # Build proper reply
           reply = wib_pb2.RegValue()
           reply.addr = req.addr
-          #print ("Este es el adrees =", reply)
-#          addressGlobal = reply.addr
-          self.ADDRESSGLOVAL = req.addr
           reply.value = req.value
+          return reply.SerializeToString()
 
-          reply_any = Any()
-          reply_any.Pack(reply)
-
-          socket.send(reply_any.SerializeToString())
-          reply = wib_pb2.Poke()
-          handle_poke(reply.addr, reply.value)
-      
-          print(f"REPLY addr: {reply.addr}")
-
-      elif msg_any.type_url.endswith("wib.PowerWIB"):
+      elif msg_any.Is(wib_pb2.PowerWIB.DESCRIPTOR):
        
           req = wib_pb2.PowerWIB()
           msg_any.Unpack(req)
@@ -197,26 +159,17 @@ class WIBEmulator:
           print(req)
        
           # Apply power state internally
-          state["femb"] = [req.femb0, req.femb1, req.femb2, req.femb3]
-          state["cold"] = req.cold
-          state["stage"] = req.stage
+          self.state["femb"] = [req.femb0, req.femb1, req.femb2, req.femb3]
+          self.state["cold"] = req.cold
+          self.state["stage"] = req.stage
        
           # Build reply
           reply = wib_pb2.Status()
-          reply.success = True   # or your fields
-       
-          reply_any = Any()
-          reply_any.Pack(reply)
-       
-          socket.send(reply_any.SerializeToString())      
-          # -------- Send reply --------
-#          resp_any = Any()
-#          resp_any.Pack(reply)
-      
-#          return resp_any.SerializeToString()
+          reply.success = True
+          return reply.SerializeToString()
 
   
-      elif msg_any.type_url.endswith("wib.GetTimestamp"):
+      elif msg_any.Is(wib_pb2.GetTimestamp.DESCRIPTOR):
           reply = wib_pb2.GetTimestamp.Timestamp()
           reply.timestamp = int(datetime.utcnow().timestamp())
           reply.day = datetime.utcnow().day
@@ -229,7 +182,7 @@ class WIBEmulator:
           print("[OK] Sent timestamp")
           return reply.SerializeToString()
 
-      elif msg_any.type_url.endswith("wib.GetTimingStatus"):
+      elif msg_any.Is(wib_pb2.GetTimingStatus.DESCRIPTOR):
           reply = wib_pb2.GetTimingStatus.TimingStatus()
           #SI5344 status register values
           reply.lol_val = 1
@@ -242,13 +195,13 @@ class WIBEmulator:
           return reply.SerializeToString()
 
   
-      elif msg_any.type_url.endswith("wib.GetSWVersion"):
+      elif msg_any.Is(wib_pb2.GetSWVersion.DESCRIPTOR):
           reply = wib_pb2.GetSWVersion.Version()
           reply.version = "v1.0.0-emulated"
           print("[OK] Sent software version")
           return reply.SerializeToString()
 
-      elif msg_any.type_url.endswith("wib.GetSensors"):
+      elif msg_any.Is(wib_pb2.GetSensors.DESCRIPTOR):
             reply = wib_pb2.GetSensors.Sensors()
             # Voltages 
             reply.ltc2990_4c_voltages.append(1.2+variation(VarGlobal,0.5))# 4 sensorsv0
