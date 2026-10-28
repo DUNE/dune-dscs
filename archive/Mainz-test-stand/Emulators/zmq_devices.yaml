@@ -1,0 +1,5 @@
+zmqdevice:
+  - tpc: 0
+    dev: 1
+    host: localhost
+    port: 5555
