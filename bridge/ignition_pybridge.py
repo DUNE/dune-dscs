@@ -318,7 +318,7 @@ if __name__ == "__main__":
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 
-                resp = wib_request(host, port, wib_pb2.GetTimestamp(), wib_pb2.GetTimestamp.Timestamp, "Timestamp")
+                resp = wib_request(host, port, wib_pb2.GetTimestamp(), wib_pb2.GetTimestamp.Timestamp, "Timestamp", use_any_response=False)
                 if resp is not None:
                     update_node(resp, Nodes, wib_ob)
 
