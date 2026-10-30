@@ -10,7 +10,7 @@
 infile=$1
 n=$2
 port_start=$3
-python emulatorCopier.py --infile=$infile --n=$n --host_start=$port_start
+python emulatorCopier.py --infile=$infile --n=$n --port_start=$port_start
 #python configfilemaker.py --n=$n --port_start=$port_start
 
 #mv config.xml /home/dunedcs/wib_opcua_cc_threadlimit/multirun/wibopcua1/build/bin

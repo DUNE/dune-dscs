@@ -3,7 +3,8 @@ import argparse
 
 parser = argparse.ArgumentParser( description = 'Script used to create multiple emulators with different host' )
 parser.add_argument('--n', type = int, required = True, help = 'Number of copies')
-parser.add_argument('--port_start', type = int, required = True, help = 'first host number')
+parser.add_argument('--port_start', type = int, required = True, help = 'first port number')
+parser.add_argument('--host', type = str, required = True, help = 'host')
 
 args = parser.parse_args()
 
@@ -14,11 +15,11 @@ ports = [args.port_start + i for i in range(n_wibs)]
 template = """\
   - tpc: 0
     wib: {i}
-    host: localhost
+    host: {host}
     port: {port}"""
 
 with open("wibs.yaml", "w") as file:  
     file.write('wibs:\n')
     for i, port in enumerate(ports, start=1):
-        file.write(f"{template.format(i=i, port=port)}\n")
+        file.write(f"{template.format(i=i, host=args.host, port=port)}\n")
  
