@@ -1,12 +1,12 @@
-name: PyLint
+name: Lint
 
 on:
   pull_request:
     branches:
-      - main
+      - develop
   push:
     branches:
-      - main
+      - develop
 
 jobs:
   pylint:
@@ -14,18 +14,16 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install PyLint
+      - name: Install uv
         run: |
-          python -m pip install --upgrade pip
-          pip install pylint
+          curl -LsSf https://astral.sh/uv/install.sh | sh
 
-      - name: Run PyLint
+      - name: Set up Python environment
         run: |
-          pylint $(git ls-files '*.py')
+          uv sync
+
+      - name: Run ruff
+        run: |
+          uv run ruff check
