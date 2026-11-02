@@ -1,12 +1,7 @@
-class Bridge(self):
-    self.name = "fred"
+class Bridge:
+    def __init__(self):
+        self.name = "test"
 
-    def print_name():
-        print(selfn.name)
+    def print_name(self):
+        print(self.name)
 
-def main():
-    bridge = Bridge()
-    bridge.print_name()
-
-if __name__ == "__main__":
-    main()
