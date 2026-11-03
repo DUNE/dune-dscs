@@ -2,6 +2,16 @@
 
 Data are communicated with Protobuf buffers over ZeroMQ
 
+The emulator accepts `wib.Command` requests and returns the raw reply message
+specified in `wib/protobuf/wib.proto`. Register and FEMB power state belong to
+each emulator instance. Sensor readings remain synthetic; boot and hardware
+behaviour are not validated.
+
+From the repository root, run the regression tests with `python -m pytest -q tests`.
+Use a virtual environment with `pytest`, `pyzmq`, `protobuf>=7.36.1,<8`, `opcua`,
+`PyYAML`, `pysnmp` and `python-ipmi` installed. The tests start their own local
+ZeroMQ server; no hardware or Ignition Gateway is needed.
+
 Emulators for WIB
 
 
