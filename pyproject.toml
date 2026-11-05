@@ -5,7 +5,7 @@ requires-python = ">=3.10"
 dependencies = [
     "asyncua>=1.1.8",
     "opcua>=0.98.13",
-    "protobuf>=7.36.1",
+    "protobuf>=7.36.2",
     "pysnmp>=7.1.30,<8",
     "python-ipmi>=0.6.1,<0.7",
     "pyyaml>=6.0.3",
