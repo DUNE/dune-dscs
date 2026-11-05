@@ -21,8 +21,8 @@ Use `--host` and `--port` for other endpoints.
 - DAPHNE: ZMQ ROUTER with protobuf envelope v2 on TCP 40001.
 - WIB: ZMQ REP with the bundled WIB protobuf definitions on TCP 1234.
 
-Board configuration and monitoring use simulated state. `--time-scale 1`
-applies configured waits; the default skips waits. These are standalone
+Board configuration and monitoring use simulated state. State changes are
+immediate; startup and hardware timing are not simulated. These are standalone
 protocol emulators, without a fleet manager or an OPC UA server.
 
 Protocol source revisions and hashes are in
