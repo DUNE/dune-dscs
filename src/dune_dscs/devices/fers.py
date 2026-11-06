@@ -14,6 +14,7 @@ from threading import RLock
 
 # FERSlib keeps board state and its last error in process-wide variables.
 _LOCK = RLock()
+_CONCENTRATORS = {}
 
 
 class FersError(RuntimeError):
@@ -79,13 +80,13 @@ _FLOAT_READS = {
 
 
 def _path_bytes(path):
-    """Validate direct paths before passing them to the SDK's fixed buffers."""
+    """Validate paths before passing them to the SDK's fixed buffers."""
     if not isinstance(path, str):
-        raise TypeError("Use eth:<IPv4 address> or usb:<PID or index>")
+        raise TypeError("Use eth:<IPv4>[:tdl:<chain>:<node>] or usb:<PID or index>")
     parts = path.split(":")
-    if len(parts) != 2:
-        raise ValueError("Use eth:<IPv4 address> or usb:<PID or index>; TDlink is not supported")
-    interface, address = parts
+    if len(parts) not in (2, 5):
+        raise ValueError("Use eth:<IPv4>[:tdl:<chain>:<node>] or usb:<PID or index>")
+    interface, address = parts[:2]
     if interface == "eth":
         IPv4Address(address)
     elif interface == "usb" and address.isascii() and address.isdecimal():
@@ -93,6 +94,12 @@ def _path_bytes(path):
             raise ValueError("USB PID or index must fit a signed 32-bit integer")
     else:
         raise ValueError("Use eth:<IPv4 address> or usb:<PID or index>")
+    if len(parts) == 5:
+        if interface != "eth" or parts[2] != "tdl":
+            raise ValueError("Use eth:<concentrator IPv4>:tdl:<chain>:<node>")
+        for value, maximum in zip(parts[3:], (7, 15), strict=True):
+            if not value.isascii() or not value.isdecimal() or len(value) > 2 or int(value) > maximum:
+                raise ValueError("TDlink chain must be 0–7 and node must be 0–15")
     return path.encode("ascii")
 
 
@@ -129,6 +136,8 @@ def _load_library(path):
         "FERS_GetLastError": (ct.c_int, [ct.POINTER(ct.c_char)]),
         "FERS_OpenDevice": (ct.c_int, [ct.c_char_p, ct.POINTER(ct.c_int)]),
         "FERS_CloseDevice": (ct.c_int, [ct.c_int]),
+        "FERS_TDLchainsInitialized": (ct.c_bool, [ct.c_int]),
+        "FERS_EnumTDLchains": (ct.c_int, [ct.c_int, ct.POINTER(ct.c_float * 16)]),
         "FERS_GetBoardInfo": (ct.c_int, [ct.c_int, ct.POINTER(_BoardInfo)]),
         "FERS_ReadRegister": (ct.c_int, [ct.c_int, ct.c_uint32, ct.POINTER(ct.c_uint32)]),
         "FERS_WriteRegister": (ct.c_int, [ct.c_int, ct.c_uint32, ct.c_uint32]),
@@ -150,7 +159,7 @@ def _load_library(path):
 
 
 class A5202:
-    """One directly connected A5202/DT5202, using Ethernet or USB.
+    """One A5202/DT5202 over Ethernet, USB or a concentrator's TDlink.
 
     The native library loads on open(), so importing this module does not
     require FERSlib. Calls are synchronous and share a lock across instances.
@@ -163,6 +172,23 @@ class A5202:
         self._library_path = library
         self._lib = None
         self._handle = None
+        self._concentrator = None
+
+    def _open_concentrator(self):
+        path = self._encoded_path.split(b":tdl:", 1)[0] + b":cnc"
+        key = (self._lib._handle, path)
+        if key not in _CONCENTRATORS:
+            handle = ct.c_int(-1)
+            self._call("FERS_OpenDevice", path, ct.byref(handle))
+            try:
+                if not self._lib.FERS_TDLchainsInitialized(handle.value):
+                    self._call("FERS_EnumTDLchains", handle.value, None)
+            except BaseException:
+                self._call("FERS_CloseDevice", handle.value)
+                raise
+            _CONCENTRATORS[key] = [handle.value, 0]
+        _CONCENTRATORS[key][1] += 1
+        self._concentrator = key
 
     def _call(self, name, *arguments):
         # Caller holds _LOCK through the call and retrieval of its error text.
@@ -185,10 +211,12 @@ class A5202:
                 return self
             if self._lib is None:
                 self._lib = _load_library(self._library_path)
-            handle = ct.c_int(-1)
-            self._call("FERS_OpenDevice", self._encoded_path, ct.byref(handle))
-            self._handle = handle.value
             try:
+                if b":tdl:" in self._encoded_path and self._concentrator is None:
+                    self._open_concentrator()
+                handle = ct.c_int(-1)
+                self._call("FERS_OpenDevice", self._encoded_path, ct.byref(handle))
+                self._handle = handle.value
                 info = self.board_info()
                 if info.fers_code != 5202:
                     raise ValueError(f"Expected a 5202 board, found {info.fers_code}")
@@ -203,6 +231,14 @@ class A5202:
             if self._handle is not None:
                 self._call("FERS_CloseDevice", self._handle)
                 self._handle = None
+            if self._concentrator is not None:
+                handle, users = _CONCENTRATORS[self._concentrator]
+                if users == 1:
+                    self._call("FERS_CloseDevice", handle)
+                    del _CONCENTRATORS[self._concentrator]
+                else:
+                    _CONCENTRATORS[self._concentrator][1] -= 1
+                self._concentrator = None
 
     def __enter__(self):
         return self.open()

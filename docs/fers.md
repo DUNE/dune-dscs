@@ -1,8 +1,9 @@
 # A5202 through the shared OPC UA bridge
 
 `dune_dscs.devices.fers.A5202` connects to an A5202 or DT5202 through CAEN
-FERSlib. Direct Ethernet is the intended first connection. Direct USB paths
-are also accepted. TDlink and concentrator setup are not implemented.
+FERSlib. For the concentrator connection, use
+`eth:<concentrator IPv4>:tdl:<chain>:<node>`. Direct Ethernet and USB paths
+are also accepted.
 
 `archive/bridge/ignition_pybridge.py` uses this client to publish board identity,
 firmware revisions, temperature, bias voltage, measured voltage and current,
@@ -51,15 +52,22 @@ USB access also needs the permissions and drivers described by CAEN.
 ## Add the board to the bridge
 
 Add a `fers_devices` entry to `archive/bridge/devices.yaml`. Replace the example
-address with the board's IPv4 address:
+address, chain and node with the values for your concentrator and A5202:
 
 ```yaml
 fers_devices:
   - id: a5202_1
-    path: eth:192.0.2.1
+    path: eth:192.0.2.1:tdl:0:0
     poll_interval: 5
     detector_temperature: false
 ```
+
+Chain and node numbers start at zero. FERSlib accepts chains 0–7 and nodes
+0–15; the available links and board count depend on the concentrator.
+The bridge opens the concentrator first, initializes its TDlink chains if
+needed, then opens the selected board. Initialization can reset the chains.
+Boards using the same concentrator share its connection until the last board
+closes. Fiber delay adjustments use FERSlib's defaults.
 
 The checked-in configuration uses `fers_devices: []`, so it opens no FERS board
 by default. Set `detector_temperature: true` only when an external sensor is
@@ -96,11 +104,12 @@ connection and leaves the HV output at its current setting.
 
 ## Read directly from Python
 
-For a separate diagnostic session, replace `192.0.2.1` with the board's IPv4 address:
+For a separate diagnostic session, use the concentrator's IPv4 address and
+the A5202's chain and node:
 
 ```bash
 uv sync
-uv run python examples/fers_monitor.py eth:192.0.2.1
+uv run python examples/fers_monitor.py eth:192.0.2.1:tdl:0:0
 ```
 
 This example prints one set of readings as JSON. It opens and closes the
@@ -112,7 +121,7 @@ Use the client in a Python program:
 ```python
 from dune_dscs.devices.fers import A5202
 
-with A5202("eth:192.0.2.1") as board:
+with A5202("eth:192.0.2.1:tdl:0:0") as board:
     print(board.board_info())
     print(board.read("voltage_v"))
     print(board.read("current_ma"))

@@ -20,7 +20,7 @@
 fers_devices: []
 # fers_devices:
 #   - id: a5202_1
-#     path: eth:192.0.2.1  # Replace with the board's IPv4 address.
+#     path: eth:192.0.2.1:tdl:0:0  # Concentrator IPv4, TDlink chain, board node.
 #     poll_interval: 5
 #     library: /path/to/libcaenferslib.so  # Or use CAEN_FERSLIB_LIBRARY.
 #     detector_temperature: false        # Enable only with a fitted sensor.
