@@ -11,10 +11,9 @@ import pytest
 import wib_pb2 as pb
 import zmq
 from opcua import Client
-
 from wib.emulator.wib_emulator_v3p1 import WIBEmulator
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1] / "archive"
 
 
 @pytest.fixture
@@ -37,12 +36,11 @@ def wib_server():
     ports = Queue()
 
     def serve():
-        with zmq.Context() as context:
-            with context.socket(zmq.REP) as socket:
-                ports.put(socket.bind_to_random_port("tcp://127.0.0.1"))
-                while not stop.is_set():
-                    if socket.poll(50):
-                        socket.send(emulator.handle_request(socket.recv()))
+        with zmq.Context() as context, context.socket(zmq.REP) as socket:
+            ports.put(socket.bind_to_random_port("tcp://127.0.0.1"))
+            while not stop.is_set():
+                if socket.poll(50):
+                    socket.send(emulator.handle_request(socket.recv()))
 
     thread = Thread(target=serve, daemon=True)
     thread.start()

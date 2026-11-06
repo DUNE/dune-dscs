@@ -1,6 +1,5 @@
 import pytest
 import wib_pb2 as pb
-
 from wib.emulator.wib_emulator_v3p1 import WIBEmulator
 
 
