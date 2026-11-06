@@ -14,9 +14,9 @@
 # depend on.
 
 voltages:
-  vol1: 2
+  vol1: 2 #number of voltages
 
 
 temperatures:
-  Temp1: 1
+  Temp1: 1 #number fo temperatures
 
