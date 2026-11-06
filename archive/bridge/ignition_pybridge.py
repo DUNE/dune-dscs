@@ -1,15 +1,19 @@
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "..")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "wib" / "protobuf"))
 import time
 
 import wib_pb2
 import zmq
 from devices_config import DevicesConfig
+from google.protobuf.message import DecodeError
 from opcua import Server, ua
 from sensor_readers import IPMIReader, SCPIReader, SNMPReader
 from wib_config import WIBConfig
 from wib_sensor_config import WIBSensorConfig
+
+from dune_dscs.devices.fers_reader import FersReader
 
 context = zmq.Context()
 
@@ -34,6 +38,9 @@ for dev in devices_cfg.get_scpi_devices():
     print(
         f"  {dev['id']} -> {dev['host']}:{dev.get('port', 5025)} ({len(dev.get('sensors', []))} sensors)"
     )
+print("Loaded FERS devices from config:")
+for dev in devices_cfg.get_fers_devices():
+    print(f"  {dev['id']} -> {dev['path']}")
 
 # Which WIB protobuf fields become OPC UA nodes, and how many array
 # elements each one gets, is config-driven (wib_sensors.yaml) rather than
@@ -85,7 +92,7 @@ def update_node(resp_msg, nodes_by_wib, wib):
     """Copy the fields of a protobuf response into the OPC UA nodes for one WIB."""
     wib_nodes = nodes_by_wib[(wib.tpc, wib.wib)]
 
-    for name in wib_nodes.keys():
+    for name in wib_nodes:
         if not hasattr(resp_msg, name):
             continue
 
@@ -123,6 +130,46 @@ def update_simple_nodes(nodes, values):
             node.set_value(value)
 
 
+def initialize_fers_pollers(objects, idx, devices):
+    """Add A5202 objects to this server; connections open on the first poll."""
+    pollers = []
+    for dev in devices:
+        dev_id = dev["id"]
+        interval = float(dev.get("poll_interval", 5))
+        if not 0 < interval < float("inf"):
+            raise ValueError("FERS poll_interval must be finite and greater than zero")
+        reader = FersReader(
+            dev["path"], library=dev.get("library"),
+            detector_temperature=dev.get("detector_temperature", False),
+        )
+        parent = objects.add_object(idx, dev_id)
+        nodes = {}
+        for name, value in reader.initial_values.items():
+            node = parent.add_variable(ua.NodeId(f"{dev_id}/{name}", idx), name, value)
+            if name not in reader.STATUS_FIELDS:
+                data = node.get_data_value()
+                data.StatusCode = ua.StatusCode(ua.StatusCodes.BadWaitingForInitialData)
+                node.set_value(data)
+            nodes[name] = node
+        pollers.append({"reader": reader, "nodes": nodes,
+                        "poll_interval": interval, "next_poll": 0.0})
+    return pollers
+
+
+def poll_fers(reader, nodes):
+    """Publish FERS telemetry or mark its values bad on this OPC UA server."""
+    values = reader.read()
+    for name, node in nodes.items():
+        if values["read_ok"] or name in reader.STATUS_FIELDS:
+            node.set_value(values[name])
+        else:
+            previous = node.get_attributes([ua.AttributeIds.Value])[0]
+            data = ua.DataValue(previous.Value)
+            data.SourceTimestamp = previous.SourceTimestamp
+            data.StatusCode = ua.StatusCode(ua.StatusCodes.BadNoCommunication)
+            node.set_value(data)
+
+
 def wib_request(port, req_msg, resp_msg_class, label):
     """
     Send a telemetry request to the WIB on `port` and return the parsed response,
@@ -155,7 +202,7 @@ def wib_request(port, req_msg, resp_msg_class, label):
     except zmq.error.Again:
         print(f" [!] Timeout: {label} request timed out on port {port}")
         return None
-    except Exception as e:
+    except (zmq.ZMQError, DecodeError) as e:
         print(f" [!] Error reading {label} on port {port}: {e}")
         return None
     finally:
@@ -287,6 +334,8 @@ if __name__ == "__main__":
             }
         )
 
+    Pollers.extend(initialize_fers_pollers(objects, idx, devices_cfg.get_fers_devices()))
+
     server.start()
     print(f"Server started at {server.endpoint}")
 
@@ -307,8 +356,11 @@ if __name__ == "__main__":
             for poller in Pollers:
                 if now < poller["next_poll"]:
                     continue
-                values = poller["reader"].read()
-                update_simple_nodes(poller["nodes"], values)
+                if isinstance(poller["reader"], FersReader):
+                    poll_fers(poller["reader"], poller["nodes"])
+                else:
+                    values = poller["reader"].read()
+                    update_simple_nodes(poller["nodes"], values)
                 poller["next_poll"] = now + poller["poll_interval"]
 
     except KeyboardInterrupt:

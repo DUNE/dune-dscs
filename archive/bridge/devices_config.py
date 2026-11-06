@@ -2,7 +2,7 @@ import yaml
 
 
 class DevicesConfig:
-    """Loads the IPMI/SNMP/SCPI device list used by wib_ignition_bridge.py.
+    """Loads the IPMI/SNMP/SCPI/FERS device list for ignition_pybridge.py.
 
     Kept separate from WIBConfig/wibs.yaml since several other scripts
     already depend on that file's exact format.
@@ -20,3 +20,6 @@ class DevicesConfig:
 
     def get_scpi_devices(self):
         return self.config.get("scpi_devices") or []
+
+    def get_fers_devices(self):
+        return self.config.get("fers_devices") or []

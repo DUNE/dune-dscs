@@ -1,9 +1,9 @@
-# Config for non-WIB sensors exposed by wib_ignition_bridge.py.
+# Config for non-WIB sensors exposed by ignition_pybridge.py.
 #
 # WIBs are still defined in wibs.yaml (loaded via wib_config.py) and are
 # unaffected by this file - other scripts already depend on that file/format.
 #
-# To add a new IPMI, SNMP or SCPI sensor: add/edit an entry below and
+# To add a new IPMI, SNMP, SCPI or FERS device: add/edit an entry below and
 # restart the bridge. No Python changes are needed.
 #
 # Every device polled here is exposed in OPC UA under:
@@ -13,6 +13,17 @@
 # for that device. IPMI/SNMP/SCPI round-trips are much slower than the WIB
 # zmq calls, so these are polled on their own cadence rather than every 1s
 # cycle.
+
+# A5202 monitoring uses the same OPC UA server and polling loop.
+# Opening the board with FERSlib stops acquisition. Enable only when this
+# bridge owns the board; see ../../docs/fers.md.
+fers_devices: []
+# fers_devices:
+#   - id: a5202_1
+#     path: eth:192.0.2.1  # Replace with the board's IPv4 address.
+#     poll_interval: 5
+#     library: /path/to/libcaenferslib.so  # Or use CAEN_FERSLIB_LIBRARY.
+#     detector_temperature: false        # Enable only with a fitted sensor.
 
 #ipmi_devices: []
 # Example (remove the leading '#' and fill in real values once you have a

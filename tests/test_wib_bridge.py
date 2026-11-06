@@ -1,8 +1,6 @@
 """Exercise the existing bridge against a WIB handler over local ZeroMQ."""
 
-import importlib.util
 import socket
-from pathlib import Path
 from queue import Queue
 from threading import Event, Thread
 from unittest.mock import Mock
@@ -12,21 +10,6 @@ import wib_pb2 as pb
 import zmq
 from opcua import Client
 from wib.emulator.wib_emulator_v3p1 import WIBEmulator
-
-ROOT = Path(__file__).resolve().parents[1] / "archive"
-
-
-@pytest.fixture
-def bridge(monkeypatch):
-    monkeypatch.chdir(ROOT / "bridge")
-    spec = importlib.util.spec_from_file_location(
-        "tested_bridge", ROOT / "bridge/ignition_pybridge.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    context = module.context
-    yield module
-    context.destroy(linger=0)
 
 
 @pytest.fixture

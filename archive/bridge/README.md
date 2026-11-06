@@ -1,9 +1,14 @@
-# Python source code for the WIB OPC/UA bridge
+# Shared OPC UA bridge
 
 The bridge polls WIB version, timing status, sensors and firmware timestamp.
 It sends no register writes, configuration, reset or power commands. OPC-UA
 clients can read the published values; they cannot change them. Removed debug
 `peek` nodes are no longer published.
+
+Add A5202 devices to this same server using `fers_devices` in `devices.yaml`.
+See the [A5202 setup and node reference](../../docs/fers.md). FERSlib opens one
+persistent connection per board; opening it stops acquisition and can write
+calibration settings. Use this mode only when the bridge owns the board.
 
 Telemetry requests may still cause internal hardware writes in the target
 firmware. For example, the WIB `read_timing_status` implementation pinned by

@@ -1,5 +1,8 @@
 # dune-dscs
 
+Use the [shared OPC UA bridge](fers.md) to publish A5202 telemetry alongside
+the existing WIB, IPMI, SNMP and SCPI devices.
+
 The dune-dscs repository is the top-level repository for the Detector Slow Controls System.
 Initially, it will contain code for bridges and emulators, but these may be refactored into other repositories in the future.
 The DSCS code wiki will be hosted at this repository, and the DUNE wiki will be used for internal information.
