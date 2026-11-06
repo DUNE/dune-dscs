@@ -15,9 +15,6 @@ firmware. For example, the WIB `read_timing_status` implementation pinned by
 `sc_emu` [updates a DAQ-header register](https://github.com/DUNE-DAQ/dune-wib-firmware/blob/ee0a4cd528f6e9a2fef90c205088173b149a91f2/sw/src/wib.cc#L937). This bridge's command restriction is
 not proof of zero hardware writes. Check the installed firmware before hardware use.
 
-Run the [hardware-free regression tests](../wib/emulator/README.md) from the
-repository root with `python -m pytest -q tests`.
-
 Don't forget to make the set up previously to run the bridge and the emulator. If you are int bridge directory do:
 
 cd ..; source setup.sh; cd -

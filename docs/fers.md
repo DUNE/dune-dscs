@@ -160,25 +160,7 @@ in-memory configuration. `FERS_SetParam` also only changes that configuration
 until `FERS_configure` applies it. The HV methods above use the hardware APIs.
 FERSlib may initialize its HV interface on the first HV register access.
 
-## Verification
-
-Run the tests and repository lint check:
-
-```bash
-uv run pytest tests/test_fers.py
-uv run ruff check
-```
-
-The tests compile a small C test double and exercise the actual ctypes boundary,
-including structure alignment, 32-bit values, float values, HV flags, failure
-handling, connection cleanup, and input limits. The bridge tests also use a live
-local OPC UA client to check typed readings, rejected client writes, failure
-quality, recovery, and a shared endpoint with another device. They require `cc` and skip if
-it is absent. To check the test double's declarations against CAEN's header:
-
-```bash
-FERSLIB_INCLUDE_DIR=/path/to/caen-ferslib/include uv run pytest tests/test_fers.py tests/test_fers_bridge.py
-```
+## API reference
 
 The reference is CAEN FERSlib 2.2.2, commit
 `6a77b986b08c8ccde1c80b3ad498aeddb93045d1`, particularly
