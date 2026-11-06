@@ -25,6 +25,3 @@ dev = [
 [tool.ruff]
 # Check maintained code; archived scripts and generated bindings are not edited by hand.
 extend-exclude = ["archive", "**/*_pb2.py"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

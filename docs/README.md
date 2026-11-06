@@ -55,11 +55,8 @@ Python code should follow PEP 8 conventions.
 
 https://peps.python.org/pep-0008/
 
-Pull requests run Ruff on maintained Python code and pytest on the top-level
-`tests` directory. Archived scripts and generated protobuf bindings are excluded
-from lint checks. The WIB tests still exercise the bridge and emulator under
-`archive`. The WIB binding was regenerated with protoc 36.2 and requires
-protobuf 7.36.2 or newer.
+Pull requests run Ruff on maintained Python code. Archived scripts and generated
+protobuf bindings are excluded. The WIB binding requires protobuf 7.36.2 or newer.
 
 ## Copyright and Licensing
 Copyright © 2026 FERMI NATIONAL ACCELERATOR LABORATORY for the benefit of the DUNE Collaboration.
