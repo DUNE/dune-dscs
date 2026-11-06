@@ -10,17 +10,5 @@
     "commit": "ee0a4cd528f6e9a2fef90c205088173b149a91f2",
     "path": "sw/src/wib.proto",
     "sha256": "c634082e95570ecd1f12d31a8ee65e566932380689898409d5480bda1e339a59"
-  },
-  "daphnemodules/daphne_control_high.proto": {
-    "repository": "https://github.com/DUNE-DAQ/daphnemodules",
-    "commit": "edf75a0c5f37cb6d1ef889723359e23e746ffe2b",
-    "path": "schema/daphnemodules/daphne_control_high.proto",
-    "sha256": "26c44d516c8373f5992299de7aaabb36b38caab4ccb6a030d13dbf14fdc0d0de"
-  },
-  "wib_opcua/Design.xml": {
-    "repository": "https://github.com/BenLand100/wib_opcua",
-    "commit": "d03e7ee4f02d33829c892737fd87140b3df4ca20",
-    "path": "Design/Design.xml",
-    "sha256": "28299cfa025c19d5aace8f6e03757dd9d19f3e04eaf079bd4bfa893970b34dd0"
   }
 }

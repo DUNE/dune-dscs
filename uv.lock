@@ -257,7 +257,7 @@ dev = [
 requires-dist = [
     { name = "asyncua", specifier = ">=1.1.8" },
     { name = "opcua", specifier = ">=0.98.13" },
-    { name = "protobuf", specifier = ">=7.36.2" },
+    { name = "protobuf", specifier = ">=7.36.1" },
     { name = "pysnmp", specifier = ">=7.1.30,<8" },
     { name = "python-ipmi", specifier = ">=0.6.1,<0.7" },
     { name = "pyyaml", specifier = ">=6.0.3" },
