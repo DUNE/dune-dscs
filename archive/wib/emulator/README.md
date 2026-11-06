@@ -2,6 +2,11 @@
 
 Data are communicated with Protobuf buffers over ZeroMQ
 
+The emulator accepts `wib.Command` requests and returns the raw reply message
+specified in `wib/protobuf/wib.proto`. Register and FEMB power state belong to
+each emulator instance. Sensor readings remain synthetic; boot and hardware
+behaviour are not validated.
+
 Emulators for WIB
 
 
