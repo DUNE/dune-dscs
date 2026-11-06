@@ -57,7 +57,9 @@ Python code should follow PEP 8 conventions.
 
 https://peps.python.org/pep-0008/
 
-Pull requests are automatically checked with PyLint using the repository's `.pylintrc` configuration.
+Pull requests run Ruff on maintained Python code and pytest on the top-level
+`tests` directory, using Python 3.10 and 3.13. Archived scripts and generated
+protobuf bindings are excluded from lint checks.
 
 ## Copyright and Licensing
 Copyright © 2026 FERMI NATIONAL ACCELERATOR LABORATORY for the benefit of the DUNE Collaboration.

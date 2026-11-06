@@ -23,25 +23,27 @@ async def run(args):
     from .daphne import Daphne
     from .wib import Wib
     device = Daphne() if args.kind == "daphne" else Wib()
-    with zmq.asyncio.Context() as context:
-        with context.socket(zmq.ROUTER if args.kind == "daphne" else zmq.REP) as socket:
-            socket.setsockopt(zmq.LINGER, 0)
-            socket.bind(f"tcp://{args.host}:{args.port}")
-            print(f"{args.kind} listening on {args.host}:{args.port}", flush=True)
-            while True:
-                frames = await socket.recv_multipart()
-                if args.kind == "daphne":
-                    if len(frames) < 2:
-                        continue
-                    reply = device.reply(frames[-1])
-                    if reply is not None:
-                        await socket.send_multipart([*frames[:-1], reply])
-                else:
-                    try:
-                        reply = await device.reply(frames[-1])
-                    except (DecodeError, ValueError):
-                        reply = b""
-                    await socket.send(reply)
+    with (
+        zmq.asyncio.Context() as context,
+        context.socket(zmq.ROUTER if args.kind == "daphne" else zmq.REP) as socket,
+    ):
+        socket.setsockopt(zmq.LINGER, 0)
+        socket.bind(f"tcp://{args.host}:{args.port}")
+        print(f"{args.kind} listening on {args.host}:{args.port}", flush=True)
+        while True:
+            frames = await socket.recv_multipart()
+            if args.kind == "daphne":
+                if len(frames) < 2:
+                    continue
+                reply = device.reply(frames[-1])
+                if reply is not None:
+                    await socket.send_multipart([*frames[:-1], reply])
+            else:
+                try:
+                    reply = await device.reply(frames[-1])
+                except (DecodeError, ValueError):
+                    reply = b""
+                await socket.send(reply)
 
 
 def main():

@@ -127,15 +127,10 @@ class Wib:
             request = _unpack(packed, pb.ConfigureWIB())
             enabled = tuple(item.enabled for item in request.fembs[:4])
             enabled = enabled + (False,) * (4 - len(enabled))
-            try:
-                generation = await self.configure(
-                    enabled
-                )
-                return pb.Status(
-                    success=True, extra=f"emulated WIB configuration generation {generation}\n".encode()
-                ).SerializeToString()
-            except Exception as error:
-                return pb.Status(success=False, extra=f"{error}\n".encode()).SerializeToString()
+            generation = await self.configure(enabled)
+            return pb.Status(
+                success=True, extra=f"emulated WIB configuration generation {generation}\n".encode()
+            ).SerializeToString()
 
         if _is(packed, pb.Peek):
             request = _unpack(packed, pb.Peek())
