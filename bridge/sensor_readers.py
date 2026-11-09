@@ -17,8 +17,11 @@ from pysnmp.hlapi.v3arch.asyncio import (
     ObjectType, ObjectIdentity, get_cmd,
 )
 
+from base_reader import BaseReader
 
-class IPMIReader:
+
+class IPMIReader(BaseReader):
+    protocol = "IPMI"
     """Reads named sensors from a BMC over IPMI-over-LAN (RMCP+)."""
 
     def __init__(self, host, port=623, username="", password="",
@@ -87,7 +90,8 @@ class IPMIReader:
         return values
 
 
-class SNMPReader:
+class SNMPReader(BaseReader):
+    protocol = "SNMP"
     """Reads named OIDs from an SNMP agent (v1/v2c, community-based)."""
 
     def __init__(self, host, port=161, community="public", version="2c", sensors=None):
@@ -145,7 +149,8 @@ class SNMPReader:
         return values
 
 
-class SCPIReader:
+class SCPIReader(BaseReader):
+    protocol = "SCPI"
     """Reads named measurements from a SCPI-over-TCP ("SCPI-RAW") instrument.
 
     Each sensor is a literal SCPI query string (e.g. "MEAS:VOLT:DC?"); the

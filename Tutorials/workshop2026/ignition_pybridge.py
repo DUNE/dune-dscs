@@ -92,7 +92,9 @@ def zmqd_request(port, req_msg, resp_msg_class, label, use_any_response=True):
             # The Sensors backend replies with a raw serialized message,
             # not wrapped in google.protobuf.Any.
             resp_msg.ParseFromString(resp_bytes)
-
+        dummy_resp = resp_msg
+        resp_list = getattr(dummy_resp, "vol1")
+        print (resp_list)
         return resp_msg
     except zmq.error.Again:
         print(f" [!] Timeout: {label} request timed out on port {port}")

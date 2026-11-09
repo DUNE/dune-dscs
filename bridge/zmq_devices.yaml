@@ -1,5 +1,7 @@
-wibs:
+wib:
   - tpc: 0
-    wib: 1
+    ID_n: 1
     host: localhost
     port: 5555
+
+    

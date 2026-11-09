@@ -1,0 +1,95 @@
+# What the bridge reads from each ZMQ device type listed in zmq_devices.yaml.
+#
+# <device type>:                     # must match a key in zmq_devices.yaml
+#   envelope: <module>.<Message>     # optional; message whose Any field `cmd`
+#                                    # wraps every request (omit to send raw)
+#   messages:
+#     <group>:                       # any label, used in log messages
+#       request:  <module>.<Message> # protobuf class sent to the device
+#       request_args: {f: v}         # optional fields set on the request
+#       response: <module>.<Message> # protobuf class of the reply
+#       any_response: true|false     # reply wrapped in google.protobuf.Any? (default true)
+#       fields:                      # reply fields exposed in OPC UA
+#         <name>: <n>                # n floats  -> nodes <name>_0 .. <name>_{n-1}
+#         <name>: {size: n, type: int|float|string|bool}
+#
+# The <module> must be importable (e.g. wib_pb2 from ../wib/protobuf).
+#
+# The `wib` settings below match wib/emulator/wib_emulator_v3p1.py. A real WIB
+# may wrap replies differently; if a group logs "reply is '...', expected
+# '...'", adjust that group's `response` / `any_response`.
+
+wib:
+  envelope: wib_pb2.Command
+  messages:
+    sensors:
+      request: wib_pb2.GetSensors
+      response: wib_pb2.GetSensors.Sensors
+      any_response: false          # this backend replies with the raw message
+      fields:
+        ltc2990_4c_voltages: 4
+        ltc2990_4e_voltages: 4
+        ltc2991_48_voltages: 8
+        femb0_dc2dc_ltc2991_voltages: 8
+        femb1_dc2dc_ltc2991_voltages: 8
+        femb2_dc2dc_ltc2991_voltages: 8
+        femb3_dc2dc_ltc2991_voltages: 8
+        femb_ldo_a0_ltc2991_voltages: 8
+        femb_ldo_a1_ltc2991_voltages: 8
+        femb_bias_ltc2991_voltages: 8
+        ltc2499_15_temps: 7
+        ad7414_49_temp: 1
+        ad7414_4d_temp: 1
+        ad7414_4a_temp: 1
+
+    version:
+      request: wib_pb2.GetSWVersion
+      response: wib_pb2.GetSWVersion.Version
+      any_response: false
+      fields:
+        version: {size: 1, type: string}
+
+    timestamp:
+      request: wib_pb2.GetTimestamp
+      response: wib_pb2.GetTimestamp.Timestamp
+      any_response: false
+      fields:
+        timestamp: {size: 1, type: int}
+        day: {size: 1, type: int}
+        month: {size: 1, type: int}
+        year: {size: 1, type: int}
+        hour: {size: 1, type: int}
+        min: {size: 1, type: int}
+        sec: {size: 1, type: int}
+
+    timing_status:
+      request: wib_pb2.GetTimingStatus
+      response: wib_pb2.GetTimingStatus.TimingStatus
+      any_response: false
+      fields:
+        lol_val: {size: 1, type: int}
+        lol_flg_val: {size: 1, type: int}
+        los_val: {size: 1, type: int}
+        los_flg_val: {size: 1, type: int}
+        ept_status: {size: 1, type: int}
+
+    peek:
+      request: wib_pb2.Peek
+      request_args: {addr: 0}
+      response: wib_pb2.Peek       # wib.proto says RegValue; the emulator replies Peek
+      fields:
+        addr: {size: 1, type: int}
+        value: {size: 1, type: int}
+
+# Example of another ZMQ device type (add a matching `tpc:` entry in
+# zmq_devices.yaml and a proto module providing these messages):
+#
+# tpc:
+#   envelope: tpc_pb2.Command
+#   messages:
+#     sensors:
+#       request: tpc_pb2.GetSensors
+#       response: tpc_pb2.GetSensors.Sensors
+#       fields:
+#         v1: 1
+#         v2: 5
