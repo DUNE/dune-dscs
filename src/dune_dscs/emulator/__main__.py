@@ -37,12 +37,14 @@ async def run(args):
                     continue
                 reply = device.reply(frames[-1])
                 if reply is not None:
+                    # Keep the routing frames, including the delimiter used by REQ clients.
                     await socket.send_multipart([*frames[:-1], reply])
             else:
                 try:
                     reply = await device.reply(frames[-1])
                 except (DecodeError, ValueError):
                     reply = b""
+                # REP must reply before it can receive the next request, even after an error.
                 await socket.send(reply)
 
 

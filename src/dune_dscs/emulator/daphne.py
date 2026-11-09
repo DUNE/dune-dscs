@@ -23,6 +23,7 @@ class Daphne:
         if request.version != 2 or request.dir != pb.DIR_REQUEST:
             return None
         response = self.dispatch(request.type, request.payload)
+        # correl_id identifies the request; timestamp_ns is monotonic time, not UTC.
         return pb.ControlEnvelopeV2(
             version=2, dir=pb.DIR_RESPONSE,
             type=request.type + 1 if request.type and not request.type & 1 else request.type,
@@ -62,5 +63,6 @@ class Daphne:
         if message_type == pb.MT2_READ_TEST_REG_REQ:
             return pb.TestRegResponse(value=0xDEADBEEF, message="ok")
         if message_type == pb.MT2_READ_GENERAL_INFO_REQ:
+            # Default fields are placeholders, not measured board telemetry.
             return pb.GeneralInfo()
         return None

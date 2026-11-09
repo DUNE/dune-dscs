@@ -44,6 +44,7 @@ class Pdu(instrum.AbstractMibInstrumController):
         return result
 
     def write_variables(self, *bindings, **_context):
+        # Validate the whole SET before changing any outlet.
         operations = []
         for index, (name, value) in enumerate(bindings):
             oid = tuple(name)

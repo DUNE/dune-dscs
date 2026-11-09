@@ -37,6 +37,7 @@ class Wib:
         self.timing_locked = True
 
     async def reply(self, payload: bytes) -> bytes:
+        # Requests wrap Any in Command.cmd; replies are raw response messages.
         command = pb.Command()
         try:
             command.ParseFromString(payload)
