@@ -1,60 +1,81 @@
-#!/bin/bash
-cd "$(dirname "$0")" || exit 1
+#!/usr/bin/env bash
+set -euo pipefail
 
-python="$HOME/DSCS/opcua-env/bin/python"
-logdir="emulator_logs/$(hostname -s)"
-mkdir -p "$logdir" || exit 1
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
-# Check the exact Python environment used by the launcher.
-if ! "$python" -c 'import zmq, zmq_em_pb2'; then
-    echo "ERROR: Python dependencies failed on $(hostname -s)."
-    exit 1
-fi
+exec "$HOME/DSCS/opcua-env/bin/python" - <<'PY'
+import fcntl
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
 
-start_emulator() {
-    local port="$1"
-    local script="$2"
-    local logfile="$logdir/$port.log"
+import psutil
 
-    if [ ! -f "$script" ]; then
-        echo "ERROR: File not found: $script"
-        return 1
-    fi
+base = Path.cwd()
+script = base / "zmq_emulator.py"
+host = socket.gethostname().split(".")[0]
 
-    if ! "$python" -m py_compile "$script"; then
-        echo "ERROR: Python syntax check failed: $script"
-        return 1
-    fi
+runtime = base / ".runtime"
+runtime.mkdir(exist_ok=True)
+state_file = runtime / f"{host}.jsonl"
 
-    if ss -H -ltn "sport = :$port" | grep -q .; then
-        echo "ERROR: Port $port is already in use — skipping."
-        return 1
-    fi
+compile(script.read_text(), str(script), "exec")
 
-    EMULATOR_PORT="$port" nohup \
-        "$python" -u "$script" \
-        > "$logfile" 2>&1 < /dev/null &
+with state_file.open("a+") as state:
+    # Prevent two launchers from starting the same fleet simultaneously.
+    fcntl.flock(state, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    state.seek(0)
 
-    local pid=$!
-    echo "$pid" > "$logdir/$port.pid"
+    if state.read().strip():
+        raise SystemExit(
+            f"{host}: run stop_emulators.sh before starting again."
+        )
 
-    sleep 1
+    # Check all ports before starting.
+    for port in range(5555, 5655):
+        with socket.socket() as connection:
+            try:
+                connection.bind(("0.0.0.0", port))
+            except OSError:
+                raise SystemExit(f"{host}: port {port} is unavailable.")
 
-    if ! kill -0 "$pid" 2>/dev/null; then
-        echo "ERROR: $script exited on port $port:"
-        cat "$logfile"
-        rm -f "$logdir/$port.pid"
-        return 1
-    fi
+    children = []
 
-    echo "RUNNING: $(hostname -s), port $port, PID $pid"
-    echo "Log: $logfile"
-}
+    for port in range(5555, 5655):
+        environment = os.environ.copy()
+        environment["EMULATOR_PORT"] = str(port)
 
-failed=0
+        child = subprocess.Popen(
+            [sys.executable, "-u", str(script)],
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
 
-for port in {5555..5654}; do #100 EMULATORS PER MACHINE 
-    start_emulator "$port" zmq_emulator.py || failed=1
-done
+        children.append(child)
 
-exit "$failed"
+        record = {
+            "pid": child.pid,
+            "started": psutil.Process(child.pid).create_time(),
+            "port": port,
+        }
+        state.write(json.dumps(record) + "\n")
+        state.flush()
+
+    time.sleep(1)
+    running = sum(child.poll() is None for child in children)
+
+    if running != len(children):
+        raise SystemExit(
+            f"{host}: only {running}/100 emulators remain running. "
+            "Run stop_emulators.sh before retrying."
+        )
+
+print(f"{host}: 100 emulators running on ports 5555–5654.")
+PY
