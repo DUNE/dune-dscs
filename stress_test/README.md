@@ -27,7 +27,9 @@ stress_test/
 │   ├── run_bridge_emulator_tests.sh
 │   └── run_ignition_tests.sh
 ├── ignition_monitoring_scripts/
+│   └── ignition_monitoring_scripts/ignition_tag_diagnostics_cached.py
 │   └── ignition_tag_diagnostics_configurable.py
+│   └── ignition_monitoring_scripts/ignition_tag_diagnostics_uncached.py
 ├── plotting/
 │   ├── plot_bridge_results.py
 │   ├── plot_ignition_results.py
