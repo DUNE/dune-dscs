@@ -9,6 +9,8 @@ resource usage and communication reliability.
 
 ## Directory structure
 
+## Directory structure
+
 ```text
 stress_test/
 ├── bridge/
@@ -23,6 +25,8 @@ stress_test/
 │   ├── create_emulators.sh
 │   └── stop_emulators.sh
 ├── diagnostics/
+│   ├── ignition_tag_diagnostics.py          # Cached Gateway timer
+│   ├── ignition_tag_diagnostics_uncached.py # Uncached Gateway timer
 │   ├── monitor_emulators.py
 │   ├── monitor_ignition.py
 │   ├── run_bridge_test.sh
@@ -257,6 +261,9 @@ runner before starting.
 
 
 
+
+
+
 ## Bridge stress test
 
 Run commands from the `stress_test` root with the Python environment
@@ -287,6 +294,96 @@ The bridge records:
 - ZeroMQ payload throughput in both directions.
 - OPC UA variable write count and rate.
 - Response parsing and node-update time.
+
+## Ignition Gateway diagnostic scripts
+
+The `diagnostics/` folder contains two Gateway timer scripts:
+
+| File | Behaviour |
+|---|---|
+| `ignition_tag_diagnostics.py` | Caches validated tag paths once per run and reuses them. |
+| `ignition_tag_diagnostics_uncached.py` | Rebuilds tag lists and browses paths on every timer execution. |
+
+Both scripts measure tag completeness, tag quality, OPC UA connection
+state and diagnostic collection time. They also record elapsed time and
+timer-thread CPU time for each diagnostic operation.
+
+### Install in Ignition Designer
+
+1. Open the stress-test project in Ignition Designer.
+2. In the Project Browser, expand **Scripting → Gateway Events → Timer**.
+3. Right-click **Timer**, create a new timer script and name it
+   `BridgeStressMonitor`.
+4. Set the timer properties:
+
+   | Property | Setting |
+   |---|---|
+   | Delay | `5000` ms |
+   | Delay Type | `Fixed Delay` |
+   | Threading | `Dedicated` |
+   | Enabled | Checked |
+
+5. Open the timer editor and replace its contents with the complete
+   `handleTimerEvent()` function from the selected file. Keep one
+   function definition.
+6. Save the project to apply the Gateway script.
+
+Enable only one diagnostic timer version at a time. Both versions
+manage the same test tags and write to the same CSV files.
+
+Fixed Delay waits five seconds after an execution finishes before
+starting the next one.
+
+### Configuration
+
+Check these settings inside the selected script:
+
+```python
+BASE_DIR = "/uni-mainz.de/homes/lgoncalve/dune-dscs/stress_test"
+OPC_SERVER = "bridge leonor 09"
+```
+
+`BASE_DIR` must be accessible to the Ignition Gateway process.
+`OPC_SERVER` must match the OPC UA connection name configured in
+Ignition.
+
+The host ordering in the timer script must match `EMULATOR_HOSTS`
+in `bridge/ignition_pybridge_diagnostic.py`.
+
+### Running a test
+
+Start the emulators and confirm the Ignition trial or licence is active.
+Then run the diagnostic bridge or the Ignition test runner.
+
+The timer reads `ignition_test_control.json` at the `stress_test` root.
+It collects measurements while the control file marks a run as active.
+
+For tests without diagnostic monitoring, uncheck **Enabled** on the
+timer and save the project before starting.
+
+### Output files
+
+Both versions append measurements to:
+
+```text
+results/ignition_tag_diagnostics.csv
+results/ignition_timer_profile.csv
+```
+
+The results directory is created automatically. These destinations are
+configured inside the Gateway script; the bridge's `--output-dir`
+option controls only the bridge CSV.
+
+The cached version checks tag paths at setup and again at the end of
+the run. Its CSV completeness counts come from the setup check.
+Tag quality and connection state are sampled on every active execution.
+
+### Process resource monitoring
+
+Gateway CPU usage and RAM are measured separately by
+`diagnostics/monitor_ignition.py`, started by the Ignition test runner.
+The Gateway timer's CPU timings describe its own thread and individual
+diagnostic operations.
 
 ## Ignition stress test
 
