@@ -1,5 +1,21 @@
-endpoint:
+bridge:
     IP: 0.0.0.0
     port: 4840
     server_name: Ignition-bridge-server
     register_namespace: OPCUASERVER 
+ZMQ:
+    wib: 
+      - tpc: 0
+        ID_n: 1
+        host: localhost
+        port: 5555
+
+      - tpc: 0
+        ID_n: 2
+        host: localhost
+        port: 5555
+
+      - tpc: 0
+        ID_n: 3
+        host: localhost
+        port: 5555

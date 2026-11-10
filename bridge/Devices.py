@@ -9,20 +9,21 @@ from opcua import ua
 
 from devices_config import DevicesConfig
 from zmq_readers import DEFAULTS, ZMQReader, load_device_type
+from endpoint_config import ENDPOINT
 
 
 class DEVICES:
     def __init__(self, devices_protocols, objects, idx,
-                 zmq_devices_file="zmq_devices.yaml",
                  zmq_metrics_file="zmq_metrics.yaml",
                  devices_file="devices.yaml"):
         self.protocols = [p.upper() for p in devices_protocols]
         self.objects = objects
         self.idx = idx
-        self.zmq_devices_file = zmq_devices_file
         self.zmq_metrics_file = zmq_metrics_file
         self.devices_file = devices_file
         self.pollers = []
+        self.endpoint = ENDPOINT()
+        self.initialize_devices()
 
     def initialize_devices(self):
         builders = {
@@ -47,14 +48,13 @@ class DEVICES:
 
     # ---------------- ZMQ ----------------
     def _init_zmq(self):
-        with open(self.zmq_devices_file) as f:
-            devs_config = yaml.safe_load(f) or {}
         with open(self.zmq_metrics_file) as f:
             metrics_config = yaml.safe_load(f) or {}
-
+        endpoint_obj = self.endpoint.get_devices_endpoint("ZMQ")
+        devs_config = endpoint_obj.get_devices_endpoint()
         for dev_type, dev_list in devs_config.items():
             if dev_type not in metrics_config:
-                raise KeyError(f"'{dev_type}' is in {self.zmq_devices_file} "
+                raise KeyError(f"'{dev_type}' is in {devs_config} "
                                f"but has no entry in {self.zmq_metrics_file}")
             envelope, messages = load_device_type(metrics_config[dev_type])
 

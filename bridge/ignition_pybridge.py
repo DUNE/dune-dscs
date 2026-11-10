@@ -15,20 +15,19 @@ from Devices import DEVICES
 if __name__ == "__main__":
     #Server configuration
     endpoint = ENDPOINT()
-    server = Server() 
-    server.set_endpoint(endpoint.ignition_endpoint)
-    server.set_server_name(endpoint.server_name)
-    idx = server.register_namespace(endpoint.register_namespace)
-    objects = server.get_objects_node()
+    bridge_server = Server() 
+    bridge_server.set_endpoint(endpoint.bridge_endpoint_info.bridge_endpoint)
+    bridge_server.set_server_name(endpoint.bridge_endpoint_info.server_name)
+    idx = bridge_server.register_namespace(endpoint.bridge_endpoint_info.register_namespace)
+    objects = bridge_server.get_objects_node()
 
    # Initialization.
     protocols = ["ZMQ"] # Allowd devices ZMQ. IPMI, SNMP
     devices = DEVICES(devices_protocols = protocols, objects =  objects, idx = idx)
-    devices.initialize_devices()
     Pollers = devices.pollers  # list of {"reader", "nodes", "poll_interval", "next_poll"}
 
-    server.start()
-    print(f"Server started at {server.endpoint}")
+    bridge_server.start()
+    print(f"Server started at {bridge_server.endpoint}")
 
     try:
         count = 0
@@ -52,5 +51,5 @@ if __name__ == "__main__":
             close = getattr(poller["reader"], "close", None)
             if close is not None:
                 close()
-        server.stop()
+        bridge_server.stop()
         print("Server stopped")
