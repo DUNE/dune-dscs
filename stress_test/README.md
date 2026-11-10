@@ -848,6 +848,71 @@ BASE = "/uni-mainz.de/homes/lgoncalve/dune-dscs/stress_test"
 Replace any remaining references to `Tutorials/workshop2026` in that
 Gateway script.
 
+## Plot bridge results
+
+Run commands from the `stress_test/` directory with the Python
+environment activated.
+
+`plotting/plot_bridge_results.py` combines bridge performance plots
+and peak analysis. It reads files named `bridge_N<number>.csv` from
+one selected experiment folder.
+
+### Bridge-only results
+
+```bash
+python plotting/plot_bridge_results.py \
+    --data-dir results/bridge_only
+```
+
+### Bridge and Ignition resource comparison
+
+Provide the folder containing `ignition_resources.csv`:
+
+```bash
+python plotting/plot_bridge_results.py \
+    --data-dir results/timer_disabled_complete \
+    --ignition-dir results/timer_disabled_complete
+```
+
+The Ignition comparison includes CPU usage and resident memory.
+It uses all resource samples in the selected file, which may include
+warm-up.
+
+### Choose an output folder
+
+```bash
+python plotting/plot_bridge_results.py \
+    --data-dir results/my_experiment \
+    --output-dir figures/my_experiment
+```
+
+By default, outputs are saved under `figures/<experiment folder name>/`.
+
+### Generated outputs
+
+- `bridge_results.pdf`: individual cycle-duration plots and measurements
+  versus device count, including resource usage, acquisition and write
+  rates, latency, errors, payload throughput and processing time.
+- `bridge_peak_analysis.pdf`: delay histograms, slow-cycle frequency,
+  peak magnitude and cycle-timing diagnostics.
+- Individual figures saved as PNG files.
+- CSV summaries and input-file records.
+
+A slow cycle defaults to more than **0.1 seconds above the median**
+for its device count. The report also shows the percentage of cycles
+more than **0.5 seconds above the median**.
+
+To save only PDFs and summary tables, add `--no-images`.
+
+View all available options:
+
+```bash
+python plotting/plot_bridge_results.py --help
+```
+
+Measurement files are not modified. Reusing an output folder overwrites
+reports with matching filenames.
+
 ## Interpreting measurements
 
 - Process CPU usage of 100% corresponds to one logical CPU.
