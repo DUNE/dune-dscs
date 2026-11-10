@@ -561,6 +561,21 @@ bash diagnostics/run_ignition_tests.sh
 
 Warm-up is measured in seconds.
 
+### Start an experiment in a custom folder
+
+Set `RESULTS_DIR` to choose the output folder when starting any case:
+
+```bash
+TIMER_ENABLED=true CACHE_ENABLED=false \
+RESULTS_DIR=results/my_experiment \
+bash diagnostics/run_ignition_tests.sh
+```
+
+The folder is created automatically. Bridge measurements, Ignition
+measurements and test settings are saved there.
+
+Use a new folder name for each independent experiment.
+
 ### Repeat an experiment
 
 Choose a new folder to retain the previous measurements:
