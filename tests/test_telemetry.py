@@ -1,9 +1,13 @@
+import socket
 import unittest
 
+from pysnmp.hlapi.v3arch.asyncio import SnmpEngine
 from pysnmp.proto.api import v2c
 
+from dune_dscs.bridge import Variable
+from dune_dscs.bridge_clients import PduClient
 from dune_dscs.emulator.daphne import Daphne
-from dune_dscs.emulator.pdu import Pdu
+from dune_dscs.emulator.pdu import Pdu, PduAgent
 from dune_dscs.emulator.protocols._generated import (
     daphneV3_high_level_confs_pb2 as daphne,
 )
@@ -81,3 +85,37 @@ class TelemetryTests(unittest.IsolatedAsyncioTestCase):
         self.now += 15
         self.assertNotEqual(first, (read(current), read(voltage)))
         self.assertEqual(len(model.outlets), 2)
+
+    def test_full_pdu_catalogue_and_scaled_readings(self):
+        model = Pdu(10, telemetry=self.telemetry, full=True)
+        self.assertEqual(len(model.monitoring.variables), 608)
+        for name, settings in model.monitoring.variables.items():
+            variable = Variable(**settings)
+            oid = tuple(map(int, variable.source.split('.')))
+            raw = model.read_variables((oid, None))[0][1]
+            raw = raw.asOctets().decode() if hasattr(raw, 'asOctets') else int(raw)
+            value = variable.convert(raw)
+            if name.startswith('External') and name.endswith('Available'):
+                self.assertIs(value, False)
+        self.assertAlmostEqual(Variable('x', scale=.001).convert(350), .35)
+        self.assertEqual(model.monitoring.variables['Outlet1_rmsVoltage']['unit'], 'V')
+        self.assertNotIn('External1_onOff', model.monitoring.variables)
+
+    async def test_full_pdu_readout_over_udp(self):
+        with socket.socket(type=socket.SOCK_DGRAM) as reservation:
+            reservation.bind(('127.0.0.1', 0))
+            port = reservation.getsockname()[1]
+        agent = PduAgent('127.0.0.1', port, full=True, telemetry=self.telemetry)
+        snmp = SnmpEngine()
+        await agent.start()
+        try:
+            client = PduClient('127.0.0.1', port, 'private', snmp, 2)
+            variables = {name: Variable(**settings) for name, settings in agent.model.monitoring.variables.items()}
+            readings = await client.read(v.source for v in variables.values())
+            self.assertEqual(len(readings), len({v.source for v in variables.values()}))
+            for variable in variables.values():
+                variable.convert(readings[variable.source])
+            self.assertEqual(variables['OutletCount'].convert(readings[variables['OutletCount'].source]), 10)
+        finally:
+            snmp.close_dispatcher()
+            await agent.close()

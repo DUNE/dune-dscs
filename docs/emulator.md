@@ -37,7 +37,7 @@ python -m dune_dscs.emulator pdu --vary --seed 3
 python -m dune_dscs.bridge examples/bridge-varying.yaml
 ```
 
-WIB temperatures drift by up to 0.5 degrees C. DAPHNE supplies nine synthetic
+WIB temperatures drift by up to 0.5 degrees C and supply voltages by 0.5 percent. DAPHNE supplies nine synthetic
 general-information readings and increasing record/busy/full counters for all
 40 channels. PDU current and voltage vary while an outlet is on and return zero
 when it is off. The default 60-second drift period can be changed with
@@ -45,7 +45,7 @@ when it is off. The default 60-second drift period can be changed with
 the changes. Setpoints, power states, outlet counts and the fixed test register
 keep their configured meanings. `--vary` can be combined with `--timing`.
 
-The varying example publishes 2 WIB, 14 DAPHNE and 4 PDU measurements, plus the
+The varying example publishes 14 WIB, 14 DAPHNE and 4 PDU measurements, plus the
 six common bridge fields per device. Its PDU readings are raw integer mA/mV;
 the MIB's unit and decimal-digit objects identify their scale.
 
@@ -54,8 +54,48 @@ DAPHNE bias readings are not derived from AFE DAC settings. The inspected
 server populates `power_plus2p5v` from 3V3PDS, so the example uses that rail name.
 The last DAPHNE-15 capture returned NaN for temperature: the varying example's
 temperature is synthetic. Firmware identity is absent from the bundled
-`GeneralInfo` reply; its native read mapping still needs identifying. The
+`GeneralInfo` reply; a native firmware-version read will be added later. The
 envelope's `version=2` is a protocol version, not a firmware version.
+
+For the full current-monitoring set found on the lab PX4, start the PDU with
+`--pdu-full` and generate its bridge configuration:
+
+```sh
+mkdir -p runs
+python -m dune_dscs.emulator.monitoring examples/bridge-varying.yaml --outlets 10 --output runs/monitoring.yaml
+python -m dune_dscs.emulator pdu --outlets 10 --pdu-full --vary
+python -m dune_dscs.bridge runs/monitoring.yaml
+```
+
+Start the WIB and DAPHNE emulators separately as above. The exporter refuses to
+overwrite an existing file. It uses a 30-second PDU period for the larger map.
+
+The PX4 set has 608 variables for ten outlets: 175 numeric electrical readings,
+386 sensor availability/state fields, and 47 identity, label, switch-state and
+uptime fields. It includes all 15 inlet measurement types and 16 numeric types
+per outlet: current/peak/inrush current, voltage, real/apparent/reactive power,
+energy, power factors, frequency, phase angle, crest factor and THD. Discrete
+on/off sensors expose states instead of undefined numeric readings. Seven
+external contact channels and two actuators were unavailable in the inventory;
+their availability and named states remain visible without fake measurements.
+
+Every object is mapped to an observed OID and the PDU2-MIB's units, decimal
+digits and state names in `src/dune_dscs/emulator/pdu_monitoring.json`. The
+inventory reference is PX4-54A7CR-A0 firmware 4.3.13.5-52458. Simulated identity
+fields are labelled SIMULATED. Configuration thresholds, history/min-max logs,
+raw reliability tables and unmapped firmware objects are outside this current
+monitoring set. Thirty- and 36-outlet extensions expose 1,648 and 1,960 variables;
+their topology is synthetic, not hardware qualification for those PDU models.
+
+PDU energy accumulates while an outlet is on; instantaneous electrical readings
+are zero when it is off. The signals are demonstration loads, not a calibrated
+power model. The bridge reads at most ten OIDs per UDP request. `scale` converts
+fixed-point readings into engineering units and is supported for Double values.
+
+The WIB subset uses the 0x4D board-temperature sensor, seven supply rails, four
+FEMB enable flags, timing endpoint status and server software version. The
+LTC2499 fields named `temps` in the protocol contain ADC voltages in the pinned
+firmware implementation; they are not published as calibrated temperatures.
 
 Use a response timing profile to repeat measured waits without blocking other devices:
 

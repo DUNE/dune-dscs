@@ -34,6 +34,7 @@ class Variable:
     type: str = "Double"
     unit: str = ""
     values: dict = field(default_factory=dict)
+    scale: float = 1
 
     def convert(self, value):
         if self.values:
@@ -47,7 +48,9 @@ class Variable:
         elif self.type == "Double":
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ValueError("Double variable received a non-finite number or a different type")
-            value = float(value)
+            value = float(value) * self.scale
+            if not math.isfinite(value):
+                raise ValueError("scaled value is not finite")
         else:
             bits = 32 if self.type.endswith("32") else 64
             lower = 0 if self.type.startswith("U") else -(2 ** (bits - 1))
@@ -77,7 +80,7 @@ class Config:
 
 
 def load_config(path, kinds=None):
-    data = yaml.safe_load(Path(path).read_text())
+    data = yaml.load(Path(path).read_text(), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
     if not isinstance(data, dict):
         raise TypeError("configuration must be a mapping")
     devices = []
@@ -115,6 +118,9 @@ def validate(config):
         if not math.isfinite(device.period) or device.period <= 0 or not device.variables:
             raise ValueError(f"{device.id}: period must be positive; variables cannot be empty")
         for name, variable in device.variables.items():
+            if (isinstance(variable.scale, bool) or not isinstance(variable.scale, (int, float))
+                    or not math.isfinite(variable.scale) or variable.type != "Double" and variable.scale != 1):
+                raise ValueError(f"{device.id}.{name}: scale must be finite and is only supported for Double")
             if not NAME.fullmatch(name) or name in RESERVED or variable.type not in TYPES:
                 raise ValueError(f"{device.id}: invalid variable name or type: {name}")
             if device.kind == "pdu":
@@ -246,11 +252,13 @@ class Bridge:
                 LOG.info("%s: %s", device.id, "available" if available else error)
             was_available = available
             publish_started = asyncio.get_running_loop().time()
-            for name, variable in device.variables.items():
+            for index, (name, variable) in enumerate(device.variables.items()):
                 # Keep the last successful sample time when communication fails.
                 await nodes[name].write_value(ua.DataValue(
                     ua.Variant(values[name], TYPES[variable.type]),
                     StatusCode=ua.StatusCode(code), SourceTimestamp=last_success))
+                if index % 100 == 99:
+                    await asyncio.sleep(0)  # Large PDU maps must leave time for other devices.
             await nodes["Available"].write_value(available)
             await nodes["LastError"].write_value(error)
             if available:

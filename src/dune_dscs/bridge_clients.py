@@ -107,9 +107,17 @@ class PduClient:
         if self.target is None:
             self.target = await UdpTransportTarget.create(
                 (self.host, self.port), timeout=self.timeout, retries=0)
+        values = {}
+        # Bound UDP response size when a PDU exposes hundreds of monitoring objects.
+        for start in range(0, len(sources), 10):
+            chunk = sources[start:start + 10]
+            values.update(await self._read_chunk(chunk))
+        return values
+
+    async def _read_chunk(self, sources):
         indication, status, _, bindings = await get_cmd(
             self.engine, CommunityData(self.community, mpModel=1), self.target, ContextData(),
-            *(ObjectType(ObjectIdentity(source)) for source in sources))
+            *(ObjectType(ObjectIdentity(source)) for source in sources), lookupMib=False)
         if isinstance(indication, errind.RequestTimedOut):
             raise TimeoutError(str(indication))
         if indication is not None or status:

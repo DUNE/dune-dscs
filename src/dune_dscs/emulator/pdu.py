@@ -51,11 +51,15 @@ class TimedUdpTransport(udp.UdpTransport):
 class Pdu(instrum.AbstractMibInstrumController):
     """Independent outlet state; all outlets start off."""
 
-    def __init__(self, outlets=10, telemetry=None):
+    def __init__(self, outlets=10, telemetry=None, full=False):
         if not 1 <= outlets <= 256:
             raise ValueError("outlets must be between 1 and 256")
         self.outlets = {index: False for index in range(1, outlets + 1)}
         self.telemetry = telemetry
+        self.monitoring = None
+        if full:
+            from .pdu_monitoring import PduMonitoring
+            self.monitoring = PduMonitoring(self)
 
     def _values(self):
         values = {
@@ -77,11 +81,22 @@ class Pdu(instrum.AbstractMibInstrumController):
                 values[SENSOR_MEASUREMENT + (2,) + index] = v2c.Integer32(1)
                 values[SENSOR_MEASUREMENT + (3,) + index] = v2c.Integer32(4)
                 values[SENSOR_MEASUREMENT + (4,) + index] = v2c.Unsigned32(round(reading * 1000) if enabled else 0)
+        if self.monitoring:
+            values.update(self.monitoring.values())
         return values
 
     def read_variables(self, *bindings, **_context):
-        values = self._values()
-        return [(name, values.get(tuple(name), v2c.NoSuchInstance())) for name, _ in bindings]
+        fallback, result = None, []
+        for name, _ in bindings:
+            oid = tuple(name)
+            if self.monitoring and self.monitoring.contains(oid):
+                value = self.monitoring.read(oid)
+            else:
+                if fallback is None:
+                    fallback = self._values()
+                value = fallback.get(oid, v2c.NoSuchInstance())
+            result.append((name, value))
+        return result
 
     def read_next_variables(self, *bindings, **_context):
         values = self._values()
@@ -105,6 +120,8 @@ class Pdu(instrum.AbstractMibInstrumController):
                 raise error.WrongValueError(idx=index)
             operations.append((oid[-1], bool(value)))
         for outlet, enabled in operations:
+            if self.monitoring:
+                self.monitoring.power_changed(outlet, enabled)
             self.outlets[outlet] = enabled
         return list(bindings)
 
@@ -112,9 +129,9 @@ class Pdu(instrum.AbstractMibInstrumController):
 class PduAgent:
     """One UDP listener exposing a PDU."""
 
-    def __init__(self, host, port, outlets=10, community="private", timing=None, telemetry=None):
+    def __init__(self, host, port, outlets=10, community="private", timing=None, telemetry=None, full=False):
         self.host, self.port, self.community = host, port, community
-        self.model = Pdu(outlets, telemetry=telemetry)
+        self.model = Pdu(outlets, telemetry=telemetry, full=full)
         self.engine = None
         self.responders = ()
         self.timing = timing

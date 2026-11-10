@@ -206,6 +206,10 @@ def _sensor_reply(model: Wib) -> Message:
             setattr(sensors, name, model.telemetry.analog(getattr(sensors, name), .5, index))
         for index, value in enumerate(sensors.ltc2499_15_temps):
             sensors.ltc2499_15_temps[index] = model.telemetry.analog(value, .5, index + 3)
+        for group, name in enumerate(("ltc2990_4e_voltages", "ltc2990_4c_voltages", "ltc2991_48_voltages")):
+            readings = getattr(sensors, name)
+            for index, value in enumerate(readings):
+                readings[index] = model.telemetry.analog(value, abs(value)*.005, 20+group*8+index)
     for field_name in (
         "femb0_dc2dc_ltc2991_voltages",
         "femb1_dc2dc_ltc2991_voltages",

@@ -19,7 +19,7 @@ async def run(args):
     if args.kind == "pdu":
         from .pdu import PduAgent
         agent = PduAgent(args.host, args.port, args.outlets, args.community,
-                         timing=timing, telemetry=telemetry)
+                         timing=timing, telemetry=telemetry, full=getattr(args, "pdu_full", False))
         try:
             await agent.start()
             print(f"PDU listening on {args.host}:{args.port}", flush=True)
@@ -78,6 +78,7 @@ def main():
     parser.add_argument("--vary", action="store_true", help="enable synthetic sensor drift and counters")
     parser.add_argument("--vary-period", type=float, default=60, help="sensor drift period in seconds")
     parser.add_argument("--seed", type=int, help="repeatable per-device phase; defaults to the listening port")
+    parser.add_argument("--pdu-full", action="store_true", help="expose the verified PX4 monitoring catalogue")
     args = parser.parse_args()
     args.port = args.port if args.port is not None else {"pdu": 1161, "daphne": 40001, "wib": 1234}[args.kind]
     if not 1 <= args.port <= 65535:

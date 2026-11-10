@@ -1,14 +1,27 @@
 # Synthetic telemetry demo: start each emulator with --vary.
 endpoint: opc.tcp://127.0.0.1:4840/dune/
-timeout: 2
+timeout: 10
 concurrency: 32
 devices:
   - id: wib-001
     kind: wib
     endpoint: tcp://127.0.0.1:1234
+    period: 5
     variables:
-      TemperatureC: {source: sensors.ad7414_49_temp, type: Double, unit: degC}
+      TemperatureC: {source: sensors.ad7414_4d_temp, type: Double, unit: degC}
       Femb0On: {source: femb.femb_power.0, type: Boolean}
+      Femb1On: {source: femb.femb_power.1, type: Boolean}
+      Femb2On: {source: femb.femb_power.2, type: Boolean}
+      Femb3On: {source: femb.femb_power.3, type: Boolean}
+      Board0V85: {source: sensors.ltc2991_48_voltages.1, type: Double, unit: V}
+      Board0V9: {source: sensors.ltc2991_48_voltages.3, type: Double, unit: V}
+      Board2V5: {source: sensors.ltc2991_48_voltages.5, type: Double, unit: V}
+      Board1V8: {source: sensors.ltc2991_48_voltages.7, type: Double, unit: V}
+      Board5V: {source: sensors.ltc2990_4e_voltages.1, type: Double, unit: V}
+      Board1V2: {source: sensors.ltc2990_4c_voltages.1, type: Double, unit: V}
+      Board3V3: {source: sensors.ltc2990_4c_voltages.3, type: Double, unit: V}
+      TimingEndpointStatus: {source: timing.ept_status, type: UInt32}
+      ServerSoftwareVersion: {source: version.version, type: String}
   - id: daphne-001
     kind: daphne
     endpoint: tcp://127.0.0.1:40001
