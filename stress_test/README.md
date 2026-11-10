@@ -913,6 +913,208 @@ python plotting/plot_bridge_results.py --help
 Measurement files are not modified. Reusing an output folder overwrites
 reports with matching filenames.
 
+## Plotting results
+
+Run plotting commands from the `stress_test/` directory:
+
+```bash
+cd ~/dune-dscs/stress_test
+source ~/DSCS/opcua-env/bin/activate
+```
+
+Input paths identify experiment folders under `results/`.
+Generated reports, figures and summary tables go under `figures/`.
+
+Measurement CSV files are never modified. Reusing an output directory
+overwrites generated files with matching names.
+
+### 1. Bridge results
+
+`plotting/plot_bridge_results.py` analyses bridge measurements only.
+
+It reads files named `bridge_N<number>.csv` and produces:
+
+- Individual cycle-duration plots.
+- Bridge measurements versus device count.
+- Compact timeout and error graphs.
+- Slow-cycle histograms, peak frequency and timing diagnostics.
+
+```bash
+python plotting/plot_bridge_results.py \
+    --data-dir results/bridge_only \
+    --output-dir figures/bridge_only
+```
+
+Main reports:
+
+- `bridge_results.pdf`
+- `bridge_peak_analysis.pdf`
+
+Individual PNG figures and CSV summaries are saved alongside the PDFs.
+
+### 2. Ignition results
+
+`plotting/plot_ignition_results.py` analyses one Ignition experiment.
+
+Required input:
+
+- `ignition_resources.csv`
+
+Optional input:
+
+- `ignition_tag_diagnostics.csv`
+
+It plots Gateway CPU and resident memory, high-CPU sample frequency,
+and available tag-quality, completeness, connection and diagnostic
+collection-time measurements.
+
+```bash
+python plotting/plot_ignition_results.py \
+    --data-dir results/diagnostics_disabled \
+    --output-dir figures/ignition_disabled
+```
+
+The main report is `ignition_results.pdf`.
+
+This script needs no bridge CSVs. It uses all recorded Ignition resource
+samples for each N, including setup and warm-up if present.
+
+### 3. Bridge–Ignition resource comparison
+
+`plotting/plot_bridge_ignition_comparison.py` compares CPU usage and
+resident memory between the bridge and Ignition.
+
+```bash
+python plotting/plot_bridge_ignition_comparison.py \
+    --bridge-dir results/bridge_only \
+    --ignition-dir results/diagnostics_disabled \
+    --output-dir figures/bridge_ignition_comparison
+```
+
+The bridge folder must contain `bridge_N<number>.csv` files.
+The Ignition folder must contain `ignition_resources.csv`.
+
+The main report is `bridge_ignition_comparison.pdf`.
+
+Each component retains its available N values. The selected folders
+may represent separate experiments.
+
+### 4. Compare Ignition diagnostic cases
+
+`plotting/plot_timer_cached_comparisons.py` compares two or more
+Ignition experiments.
+
+Provide one `--case LABEL FOLDER` argument per experiment.
+Labels appear in the figure legends.
+
+The script supports:
+
+- Diagnostic collection enabled versus disabled.
+- Cached versus uncached diagnostic collection.
+- More than two cases together.
+- One or multiple device counts.
+
+#### Enabled versus disabled
+
+For the existing enabled and complete disabled datasets:
+
+```bash
+python plotting/plot_timer_cached_comparisons.py \
+    --case Enabled results/timer_enabled_case \
+    --case Disabled results/timer_disabled_complete \
+    --output-dir figures/timer_enabled_vs_disabled
+```
+
+#### Cached versus uncached
+
+For new experiments produced by the test runner:
+
+```bash
+python plotting/plot_timer_cached_comparisons.py \
+    --case Uncached results/timer_uncached \
+    --case Cached results/timer_cached \
+    --output-dir figures/timer_cached_vs_uncached
+```
+
+For the existing N=900 experiments:
+
+```bash
+python plotting/plot_timer_cached_comparisons.py \
+    --case Uncached results/timer_original_N900 \
+    --case Cached results/timer_cached_N900 \
+    --devices 900 \
+    --window measured \
+    --output-dir figures/timer_cached_vs_uncached_N900
+```
+
+#### Compare multiple device counts
+
+Omit `--devices` to analyse all available device counts.
+
+To select several counts, add:
+
+```bash
+--devices 10 110 210 310
+```
+
+Plots versus N retain each case's available counts. Detailed per-N
+comparisons are generated only for counts shared by all selected cases.
+
+Each experiment folder must contain `ignition_resources.csv`.
+Tag diagnostics are optional; missing tag diagnostics do not prevent
+CPU and RAM comparisons.
+
+#### Select the measurement window
+
+The default is:
+
+```bash
+--window all
+```
+
+This uses all recorded Ignition resource samples for each N.
+
+To exclude setup and warm-up, use:
+
+```bash
+--window measured
+```
+
+This requires `bridge_N<number>.csv` in each experiment folder.
+Bridge timestamps define the measured period; bridge metrics are
+not included in the Ignition comparison plots.
+
+#### Comparison outputs
+
+The output folder contains:
+
+- `ignition_timer_comparison.pdf`
+- CPU and RAM plots versus N.
+- Mean CPU, P95 CPU and high-CPU sample comparisons.
+- Per-N CPU traces with identical main scales.
+- Per-N mean/P95 CPU bars and CPU distributions.
+- Per-N memory traces.
+- Available collection-time and tag-quality comparisons.
+- `summary.csv` and `plot_settings.json`.
+
+### Output options and interpretation
+
+Add `--no-images` to any plotting command to save PDFs and tables
+without individual PNG figures.
+
+Use `--help` with any script to see its options.
+
+- CPU usage of 100% corresponds to one logical CPU.
+- RAM is process resident memory, not JVM heap usage.
+- P5–P95 bands show variability across samples, not confidence intervals.
+- High-CPU percentages count samples exceeding the threshold,
+  not distinct peak events.
+- Periodic tag snapshots do not establish continuous availability
+  or data freshness.
+
+Keep the plotting scripts together in `plotting/`, because they reuse
+shared loading and plotting functions.
+
 ## Interpreting measurements
 
 - Process CPU usage of 100% corresponds to one logical CPU.
