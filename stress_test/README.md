@@ -17,7 +17,6 @@ stress_test/
 │   ├── zmq_devices_config.py
 │   ├── zmq_sensor_config.py
 │   ├── zmq_devices.yaml
-│   ├── zmq_devices_all.yaml
 │   └── zmq_sensors.yaml
 ├── emulators/
 │   ├── zmq_emulator.py
@@ -95,6 +94,170 @@ for processes it could not stop.
 
 Keep runtime records while the corresponding emulators are running.
 The stop script manages instances started by this launcher.
+
+
+## Bridge
+
+The `bridge/` folder contains the ZeroMQ-to-OPC-UA bridge and its
+configuration.
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `ignition_pybridge.py` | Runs the bridge continuously using the device YAML configuration. |
+| `ignition_pybridge_diagnostic.py` | Runs a fixed number of polling cycles and records stress-test measurements. |
+| `zmq_devices_config.py` | Loads the device YAML configuration. |
+| `zmq_sensor_config.py` | Loads the sensor-field configuration. |
+| `zmq_devices.yaml` | Lists devices used by the continuous bridge. |
+| `zmq_sensors.yaml` | Defines the sensor fields and number of values exposed per field. |
+
+Both bridge versions use the shared `zmq_em_pb2.py` module at the
+`stress_test` root.
+
+### Preparation
+
+Activate the Python environment and work from the `stress_test` root:
+
+```bash
+source ~/DSCS/opcua-env/bin/activate
+cd ~/dune-dscs/stress_test
+```
+
+Start the emulators on their configured hosts before running the bridge.
+Run one bridge instance per host using TCP port 4840.
+
+### Continuous bridge
+
+Use this version to expose readings continuously without recording
+stress-test metrics:
+
+```bash
+python bridge/ignition_pybridge.py
+```
+
+It reads devices from `bridge/zmq_devices.yaml`. For example:
+
+```yaml
+zmqdevice:
+  - tpc: 3
+    dev: 1
+    host: "134.93.131.35"
+    port: 5555
+```
+
+Each entry identifies a device, its host and its emulator port.
+
+Sensor fields are loaded from `bridge/zmq_sensors.yaml`. The bridge
+polls the devices sequentially, with a one-second delay before each
+polling cycle and a two-second receive timeout per request.
+
+Press Ctrl+C to stop the bridge.
+
+### Diagnostic bridge
+
+Use this version for a fixed-length stress test:
+
+```bash
+python bridge/ignition_pybridge_diagnostic.py \
+    --devices 10 \
+    --cycles 300 \
+    --warmup 30
+```
+
+| Option | Meaning |
+|---|---|
+| `--devices` | Required total number of emulators, from 1 to 1000. |
+| `--cycles` | Number of measured cycles after warm-up. Default is 10. |
+| `--warmup` | Warm-up duration in seconds. Default is 30. Use 0 to disable. |
+
+The diagnostic bridge generates its device list using `make_devices()`
+and the `EMULATOR_HOSTS` constant. It does not read `zmq_devices.yaml`.
+
+Devices are distributed round-robin across the configured hosts.
+The first emulator on each host uses port 5555, the second uses 5556,
+and so on.
+
+The host ordering must match the ordering in the Ignition diagnostic
+timer script. Each host must have enough running emulators for the
+selected total device count.
+
+This version uses a ten-second receive timeout per request. It keeps
+the one-second delay before each polling cycle.
+
+### Diagnostic output
+
+The diagnostic bridge creates `bridge_N<number>.csv` in the current
+working directory and refuses to overwrite an existing file.
+
+Each measured cycle records:
+
+- UTC timestamp, cycle number, device count and variable count.
+- Polling-cycle duration, including the one-second delay.
+- Bridge process CPU usage and resident memory.
+- Request attempts, successes, receive timeouts and errors.
+- Failure percentage and successful acquisition rate.
+- Mean, median, P95 and P99 latency for successful requests.
+- ZeroMQ request and response payload throughput.
+- OPC UA variable write count and write rate.
+- Total response-parsing and node-update time.
+
+Warm-up cycles update the nodes but are excluded from the CSV
+measurements.
+
+The bridge also updates `ignition_test_control.json` at the
+`stress_test` root with the device count, run ID and active state.
+The Ignition diagnostic timer uses this file to identify the test.
+
+After a completed test, store its CSV with the corresponding run under
+`results/`.
+
+### OPC UA connection
+
+Both versions expose the same endpoint:
+
+```text
+opc.tcp://<bridge-host>:4840/freeopcua/server/
+```
+
+Use `127.0.0.1` for `<bridge-host>` when Ignition runs on the same
+computer. Otherwise, use the bridge computer's IP address.
+
+The configured connection uses anonymous authentication with security
+policy and mode set to None.
+
+Sensor node identifiers retain this format:
+
+```text
+TPC<tpc>/WIB<device>/<field>/<index>
+```
+
+For example:
+
+```text
+TPC3/WIB1/Temp1/0
+```
+
+### Automated tests
+
+Run the configured bridge-only sequence:
+
+```bash
+bash diagnostics/run_bridge_test.sh
+```
+
+Run the sequence with Ignition resource monitoring on the Gateway host:
+
+```bash
+bash diagnostics/run_ignition_tests.sh
+```
+
+Check device counts, cycle counts and warm-up settings in the selected
+runner before starting.
+
+
+
+
 
 ## Bridge stress test
 
