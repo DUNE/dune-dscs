@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 import sys
-sys.path.insert(0, "..")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import time
 from opcua import Server, ua
 import zmq
@@ -264,7 +264,7 @@ def make_devices(number):
     return devices
 
 CONTROL_FILE = (
-    Path(__file__).resolve().parent
+    Path(__file__).resolve().parents[1]
     / "ignition_test_control.json"
 )
 

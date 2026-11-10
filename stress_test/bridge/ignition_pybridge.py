@@ -1,7 +1,8 @@
 #### Comments: reflect changes for the new accessible device names 
 
 import sys
-sys.path.insert(0, "..")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import time
 from opcua import Server, ua
 import zmq

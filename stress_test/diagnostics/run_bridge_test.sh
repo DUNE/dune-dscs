@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 CYCLES=300
 MAX_DEVICES=1200
@@ -25,7 +25,7 @@ for n in "${DEVICE_COUNTS[@]}"; do
     echo
     echo "=== Testing ${n} devices, ${CYCLES} cycles ==="
 
-    python ignition_pybridge_diagnostic.py \
+    python bridge/ignition_pybridge_diagnostic.py \
         --devices "$n" \
         --cycles "$CYCLES"
 

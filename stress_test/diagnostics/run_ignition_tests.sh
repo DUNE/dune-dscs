@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 PYTHON="$HOME/DSCS/opcua-env/bin/python"
-MONITOR="$PWD/monitor_ignition.py"
+MONITOR="$PWD/diagnostics/monitor_ignition.py"
 
 #DEVICE_COUNTS=(1 10 110 210 310 410 510 610 710 810 910 1000)
 DEVICE_COUNTS=(10 110 210 310 410 510 610 710 810 900)
@@ -184,7 +184,7 @@ PY
         exit 1
     fi
 
-    "$PYTHON" ignition_pybridge_diagnostic.py \
+    "$PYTHON" bridge/ignition_pybridge_diagnostic.py \
         --devices "$n" \
         --cycles "$CYCLES" \
         --warmup "$WARMUP"

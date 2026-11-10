@@ -15,9 +15,10 @@ from matplotlib.ticker import MaxNLocator
 
 # ---------- Settings ----------
 
-DATA_DIR = Path(__file__).resolve().parent
-PLOT_DIR = DATA_DIR / "plots"
-PLOT_DIR.mkdir(exist_ok=True)
+ROOT = Path(__file__).resolve().parents[1]
+DATA_DIR = ROOT / "results" / "trial_with_ignition_script"
+PLOT_DIR = ROOT / "figures" / "plots"
+PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
 WARMUP_CYCLES = 0
 EXTRA_THRESHOLD_S = 0.100

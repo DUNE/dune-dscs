@@ -10,12 +10,14 @@ import numpy as np
 import pandas as pd
 
 
-BASE = Path(__file__).resolve().parent
-OUTPUT = BASE / "ignition_timer_plots"
+ROOT = Path(__file__).resolve().parents[1]
+BASE = ROOT / "results"
+OUTPUT = ROOT / "figures" / "ignition_timer_plots"
+OUTPUT.mkdir(parents=True, exist_ok=True)
 
 CASES = {
     "enabled": (BASE / "timer_enabled_case", "Timer enabled", "#d97706"),
-    "disabled": (BASE / "timer_disabled_case", "Timer disabled", "#2563eb"),
+    "disabled": (BASE / "timer_disabled_complete", "Timer disabled", "#2563eb"),
 }
 
 METRICS = {

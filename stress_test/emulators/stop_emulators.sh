@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
 
 exec "$HOME/DSCS/opcua-env/bin/python" - <<'PY'
 import fcntl
@@ -13,7 +14,7 @@ from pathlib import Path
 import psutil
 
 base = Path.cwd()
-script = str(base / "zmq_emulator.py")
+script = str(base / "emulators" / "zmq_emulator.py")
 host = socket.gethostname().split(".")[0]
 state_file = base / ".runtime" / f"{host}.jsonl"
 

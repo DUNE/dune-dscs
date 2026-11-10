@@ -12,9 +12,11 @@ import pandas as pd
 
 # ---------- Settings ----------
 
-BASE = Path(__file__).resolve().parent
-OUTPUT = BASE / "combined_plots"
-OUTPUT.mkdir(exist_ok=True)
+BASE = Path(__file__).resolve().parents[1]
+BRIDGE_DIR = BASE / "results" / "trial_with_ignition_script"
+IGNITION_DIR = BASE / "results" / "timer_disabled_complete"
+OUTPUT = BASE / "figures" / "combined_plots"
+OUTPUT.mkdir(parents=True, exist_ok=True)
 å
 BRIDGE_COLOR = "#2563eb"
 IGNITION_COLOR = "#d97706"
@@ -67,7 +69,7 @@ def statistics(values):
 pattern = re.compile(r"bridge_N(\d+)_1\.csv")
 rows = []
 
-for file in BASE.glob("bridge_N*_1.csv"):
+for file in BRIDGE_DIR.glob("bridge_N*_1.csv"):
     match = pattern.fullmatch(file.name)
     if match is None:
         continue
@@ -114,7 +116,7 @@ for file in BASE.glob("bridge_N*_1.csv"):
 
 # ---------- Load Ignition resources ----------
 
-ignition = pd.read_csv(BASE / "ignition_resources.csv")
+ignition = pd.read_csv(IGNITION_DIR / "ignition_resources.csv")
 
 for column in ("N", "cpu_percent", "rss_mb"):
     ignition[column] = pd.to_numeric(
@@ -134,7 +136,7 @@ ignition = ignition.dropna(
 )
 
 # Use the latest logged Ignition attempt per N when diagnostics exists.
-diagnostic_file = BASE / "ignition_tag_diagnostics.csv"
+diagnostic_file = IGNITION_DIR / "ignition_tag_diagnostics.csv"
 diagnostics = None
 
 if diagnostic_file.exists():

@@ -1,9 +1,13 @@
+from pathlib import Path
+
 import yaml
 
 
 class ZMQSensorConfig:
 
-    def __init__(self, filename="zmq_sensors.yaml"):
+    def __init__(self, filename=None):
+        if filename is None:
+            filename = Path(__file__).with_name("zmq_sensors.yaml")
         with open(filename) as f:
             self.config = yaml.safe_load(f) or {}
 

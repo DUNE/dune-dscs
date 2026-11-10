@@ -11,9 +11,10 @@ import pandas as pd
 
 # ---------- Settings ----------
 
-BASE = Path(__file__).resolve().parent
-OUTPUT = BASE / "timer_comparison_plots"
-OUTPUT.mkdir(exist_ok=True)
+ROOT = Path(__file__).resolve().parents[1]
+BASE = ROOT / "results" / "timer_comparison_N900"
+OUTPUT = ROOT / "figures" / "timer_comparison_plots"
+OUTPUT.mkdir(parents=True, exist_ok=True)
 
 N = 900
 STATES = ("enabled", "disabled")

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 CYCLES=300
 MAX_DEVICES=1000
 STEP=100
 
 PYTHON="$HOME/DSCS/opcua-env/bin/python"
-MONITOR="$PWD/monitor_emulators.py"
+MONITOR="$PWD/diagnostics/monitor_emulators.py"
 
 HOSTS=(
     "Weber03 134.93.131.35"
@@ -93,7 +93,7 @@ for n in "${DEVICE_COUNTS[@]}"; do
     done
 
     # Run the bridge while the emulator monitors are running.
-    "$PYTHON" ignition_pybridge_diagnostic.py \
+    "$PYTHON" bridge/ignition_pybridge_diagnostic.py \
         --devices "$n" \
         --cycles "$CYCLES"
 
