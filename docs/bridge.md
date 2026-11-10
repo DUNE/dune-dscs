@@ -13,6 +13,9 @@ Select one technology with `--kind wib`. Repeat `--kind` to select several.
 Use `--endpoint opc.tcp://127.0.0.1:4842/dune/` when running another instance.
 Each instance owns its configured device connections and polling tasks.
 
+Use the [measurement tools](measurements.md) for native query latency, timeouts,
+process resources and OPC UA read measurements.
+
 ## Configuration
 
 The [example](../examples/bridge.yaml) selects device addresses and measurements.

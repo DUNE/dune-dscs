@@ -11,6 +11,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     UdpTransportTarget,
     get_cmd,
 )
+from pysnmp.proto import errind
 from pysnmp.proto.api import v2c
 
 from .emulator.protocols._generated import daphneV3_high_level_confs_pb2 as daphne
@@ -109,6 +110,8 @@ class PduClient:
         indication, status, _, bindings = await get_cmd(
             self.engine, CommunityData(self.community, mpModel=1), self.target, ContextData(),
             *(ObjectType(ObjectIdentity(source)) for source in sources))
+        if isinstance(indication, errind.RequestTimedOut):
+            raise TimeoutError(str(indication))
         if indication is not None or status:
             raise ConnectionError(str(indication or status))
         if len(bindings) != len(sources):

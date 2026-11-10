@@ -50,3 +50,6 @@
 # python
 __pycache__/
 *.pyc
+
+# Local bridge measurements
+runs/
