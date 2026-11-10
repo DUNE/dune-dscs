@@ -56,6 +56,77 @@ reuse shared helper functions.
 
 ## Environment and host configuration
 
+### Create the Python environment
+
+Run on a Weber computer using Python 3.10 or newer:
+
+```bash
+mkdir -p "$HOME/DSCS"
+python3 -m venv "$HOME/DSCS/opcua-env"
+source "$HOME/DSCS/opcua-env/bin/activate"
+
+python -m pip install --upgrade pip
+python -m pip install \
+    "protobuf==7.36.2" \
+    pyzmq \
+    opcua \
+    PyYAML \
+    psutil \
+    pandas \
+    numpy \
+    matplotlib
+```
+
+The package `pyzmq` provides the Python `zmq` module.
+The current bridge uses `opcua`; `asyncua` is not required.
+
+The quotes around `"protobuf==7.36.2"` keep the version specification
+as one shell argument. If using `>=` instead, quotes are essential
+to prevent shell output redirection.
+
+The Mainz computers share the user's home directory, so the environment
+is available at the same path on each host. Activate it in each terminal:
+
+```bash
+source "$HOME/DSCS/opcua-env/bin/activate"
+cd "$HOME/dune-dscs/stress_test"
+```
+
+### Install the Protobuf compiler without sudo
+
+The compiler is only needed when regenerating `zmq_em_pb2.py`.
+The following binary is for the Linux x86-64 Weber computers:
+
+```bash
+mkdir -p "$HOME/DSCS/tools/protoc"
+cd "$HOME/DSCS/tools/protoc"
+
+wget \
+    https://github.com/protocolbuffers/protobuf/releases/download/v36.2/protoc-36.2-linux-x86_64.zip
+
+unzip protoc-36.2-linux-x86_64.zip
+
+export PROTOC="$HOME/DSCS/tools/protoc"
+"$PROTOC/bin/protoc" --version
+```
+
+`PROTOC` is set for the current terminal. Set it again in a new terminal
+when needed.
+
+After changing `zmq_em.proto`, regenerate the Python module:
+
+```bash
+cd "$HOME/dune-dscs/stress_test"
+export PROTOC="$HOME/DSCS/tools/protoc"
+
+"$PROTOC/bin/protoc" \
+    --proto_path=. \
+    --proto_path="$PROTOC/include" \
+    --python_out=. \
+    zmq_em.proto
+```
+### Activating the python environment 
+
 Run the commands below from the `stress_test` root:
 
 ```bash
@@ -70,6 +141,42 @@ Python dependencies are `pyzmq`, `protobuf`, `opcua`, `PyYAML` and `psutil`.
 Plotting also requires `pandas`, `numpy` and `matplotlib`. The generated
 `zmq_em_pb2.py` must be compatible with the installed Protobuf runtime;
 regenerate it when changing `zmq_em.proto`.
+
+### Open the Ignition Gateway from another computer
+
+Run the SSH tunnel on your Mac or other client computer:
+
+```bash
+ssh -N -o ExitOnForwardFailure=yes \
+    -L 127.0.0.1:8088:134.93.128.243:8088 \
+    weber02
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8088
+```
+
+This forwards local port 8088 through Weber02 to the Ignition Gateway
+on Weber09 (`134.93.128.243`), assuming its HTTP port is 8088.
+
+If the Gateway uses port 8089 instead, use:
+
+```bash
+ssh -N -o ExitOnForwardFailure=yes \
+    -L 127.0.0.1:8088:134.93.128.243:8089 \
+    weber02
+```
+
+The browser address remains `http://127.0.0.1:8088`.
+
+`weber02` must be a working SSH hostname or alias on the client computer.
+Leave the terminal open while using the tunnel. No terminal output after
+authentication is normal. Press Ctrl+C to close the tunnel.
+
+
+
 
 ### Emulator hosts and capacity
 
