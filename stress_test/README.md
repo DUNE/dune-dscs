@@ -156,34 +156,32 @@ Press Ctrl+C to stop the bridge.
 
 ### Diagnostic bridge
 
-Use this version for a fixed-length stress test:
+Run from the `stress_test` root:
 
 ```bash
 python bridge/ignition_pybridge_diagnostic.py \
     --devices 10 \
     --cycles 300 \
-    --warmup 30
+    --warmup 30 \
+    --output-dir results/timer_disabled
 ```
 
 | Option | Meaning |
 |---|---|
-| `--devices` | Required total number of emulators, from 1 to 1000. |
-| `--cycles` | Number of measured cycles after warm-up. Default is 10. |
-| `--warmup` | Warm-up duration in seconds. Default is 30. Use 0 to disable. |
+| `--devices` | Required number of emulators, from 1 to 1000. |
+| `--cycles` | Measured polling cycles after warm-up. Default is 10. |
+| `--warmup` | Warm-up duration in seconds. Default is 30. |
+| `--output-dir` | CSV destination. Defaults to `stress_test/results`. Relative paths use the current working directory. |
 
-The diagnostic bridge generates its device list using `make_devices()`
-and the `EMULATOR_HOSTS` constant. It does not read `zmq_devices.yaml`.
+The output directory is created automatically. This example saves
+`results/timer_disabled/bridge_N10.csv`. Existing CSV files are never
+overwritten.
 
-Devices are distributed round-robin across the configured hosts.
-The first emulator on each host uses port 5555, the second uses 5556,
-and so on.
+The `timer_disabled` folder name labels the experiment. Disable the
+Ignition diagnostic timer in Designer before running this case.
 
-The host ordering must match the ordering in the Ignition diagnostic
-timer script. Each host must have enough running emulators for the
-selected total device count.
+The shared `ignition_test_control.json` remains at the `stress_test` root.
 
-This version uses a ten-second receive timeout per request. It keeps
-the one-second delay before each polling cycle.
 
 ### Diagnostic output
 
