@@ -25,13 +25,15 @@ stress_test/
 │   ├── create_emulators.sh
 │   └── stop_emulators.sh
 ├── diagnostics/
-│   ├── ignition_tag_diagnostics.py          # Cached Gateway timer
-│   ├── ignition_tag_diagnostics_uncached.py # Uncached Gateway timer
 │   ├── monitor_emulators.py
 │   ├── monitor_ignition.py
 │   ├── run_bridge_test.sh
-│   ├── run_bridge_test_emulator.sh
+│   ├── run_bridge_emulator_tests.sh # Tests both bridge measurements and emulators CPU usage
 │   └── run_ignition_tests.sh
+├── ignition_monitoring_scripts/
+│   ├── ignition_monitoring_scripts/ignition_tag_diagnostics_configurable.py        # Both Cached and Uncached Gateway timer
+│   ├── ignition_tag_diagnostics.py          # Cached Gateway timer
+│   ├── ignition_tag_diagnostics_uncached.py # Uncached Gateway timer
 ├── plotting/
 │   ├── stress_test_result.py
 │   ├── plot_ignition_results.py
@@ -100,6 +102,175 @@ Keep runtime records while the corresponding emulators are running.
 The stop script manages instances started by this launcher.
 
 
+## Bridge-only test runner
+
+`diagnostics/run_bridge_test.sh` runs the diagnostic bridge for the
+selected device counts. It records bridge measurements without starting
+Ignition or emulator resource monitors.
+
+### Configuration
+
+Edit `DEVICE_COUNTS` near the top of the script:
+
+```bash
+DEVICE_COUNTS=(10 110 210 310 410 510 610 710 810 900)
+```
+
+The default list currently contains only `110`.
+
+Other defaults are:
+
+| Setting | Default |
+|---|---|
+| `CYCLES` | `300` measured cycles |
+| `WARMUP` | `30` seconds |
+| `RESULTS_DIR` | `results/bridge_only/` |
+
+### Run
+
+Start the required emulators, then run:
+
+```bash
+source ~/DSCS/opcua-env/bin/activate
+cd ~/dune-dscs/stress_test
+
+bash diagnostics/run_bridge_test.sh
+```
+
+For a custom experiment folder:
+
+```bash
+RESULTS_DIR=results/bridge_only_repeat \
+bash diagnostics/run_bridge_test.sh
+```
+
+Override cycles and warm-up when needed:
+
+```bash
+CYCLES=10 WARMUP=5 \
+RESULTS_DIR=results/bridge_validation \
+bash diagnostics/run_bridge_test.sh
+```
+
+### Output
+
+Each device count produces:
+
+```text
+results/bridge_only/bridge_N<number>.csv
+```
+
+The directory is created automatically. The runner refuses to overwrite
+existing bridge CSVs and does not resume partial runs.
+
+For a test without Gateway diagnostic activity, disable the Ignition
+diagnostic timer in Designer before starting.
+
+## Bridge and emulator resource test runner
+
+`diagnostics/run_bridge_emulator_tests.sh` runs the diagnostic bridge
+while measuring emulator CPU usage and resident memory on each
+configured host.
+
+It does not start the Ignition resource monitor.
+
+### Preparation
+
+Before running:
+
+1. Start the emulators on every configured host.
+2. Check that `HOSTS` matches the host list in the diagnostic bridge.
+3. Confirm the shared repository and Python environment are accessible
+   at the same paths on each host.
+4. Confirm passwordless SSH works from the runner host to the remote
+   emulator hosts.
+
+For example:
+
+```bash
+ssh -o BatchMode=yes lgoncalve@134.93.131.35 hostname
+```
+
+The local host is monitored directly. Remote hosts are monitored through
+SSH.
+
+For a test without Gateway diagnostic activity, disable the Ignition
+diagnostic timer in Designer.
+
+### Configuration
+
+Edit `DEVICE_COUNTS` and `HOSTS` near the top of the script.
+
+Defaults are:
+
+| Setting | Default |
+|---|---|
+| Device counts | `10 110 210 310 410 510 610 710 810 900` |
+| `CYCLES` | `300` measured cycles |
+| `WARMUP` | `30` seconds |
+| `RESULTS_DIR` | `results/emulator_bridge/` |
+
+### Run
+
+```bash
+source ~/DSCS/opcua-env/bin/activate
+cd ~/dune-dscs/stress_test
+
+bash diagnostics/run_bridge_emulator_tests.sh
+```
+
+For a custom experiment folder:
+
+```bash
+RESULTS_DIR=results/emulator_bridge_repeat \
+bash diagnostics/run_bridge_emulator_tests.sh
+```
+
+For a shorter validation run:
+
+```bash
+CYCLES=10 WARMUP=5 \
+RESULTS_DIR=results/emulator_bridge_validation \
+bash diagnostics/run_bridge_emulator_tests.sh
+```
+
+These overrides retain the device-count list configured in the script.
+
+### Output and monitoring
+
+For each device count, the selected results folder contains:
+
+```text
+bridge_N<number>.csv
+emulators_N<number>_Weber02.csv
+emulators_N<number>_Weber03.csv
+...
+```
+
+Each emulator CSV records:
+
+- UTC timestamp.
+- Number of accessible monitored emulator processes.
+- Sum of process CPU usage.
+- Sum of process resident memory in MB.
+
+The monitors track this user's emulator processes found at startup,
+including idle emulators. Summed RSS can count shared memory pages
+more than once.
+
+The runner waits for a sample from every host before starting the
+bridge. Emulator monitoring includes bridge startup and warm-up;
+the bridge CSV contains measured cycles only.
+
+At the end, a shared stop marker ends the monitors. This stops resource
+monitoring, while the emulators continue running.
+
+Errors appear in the terminal. No separate `.err` files are created.
+Existing result files are protected from overwriting. For a fresh
+experiment, choose a new `RESULTS_DIR`.
+
+The runner verifies the expected bridge cycles before reporting
+completion. It does not resume partial runs.
 ## Bridge
 
 The `bridge/` folder contains the ZeroMQ-to-OPC-UA bridge and its

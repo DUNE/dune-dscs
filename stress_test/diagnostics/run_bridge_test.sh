@@ -3,34 +3,35 @@ set -euo pipefail
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
-CYCLES=300
-MAX_DEVICES=1200
-STEP=100
-
+# Select the device counts to test.
 DEVICE_COUNTS=(110)
-#for ((n = 110; n <= MAX_DEVICES; n += STEP)); do
- #   DEVICE_COUNTS+=("$n")
-#done
 
-# Check before starting: the bridge opens CSV files without overwriting.
+CYCLES="${CYCLES:-300}"
+WARMUP="${WARMUP:-30}"  # Seconds.
+RESULTS_DIR="${RESULTS_DIR:-$PWD/results/bridge_only}"
+PYTHON="${PYTHON:-$HOME/DSCS/opcua-env/bin/python}"
+
+mkdir -p -- "$RESULTS_DIR"
+
+# Check all output paths before starting.
 for n in "${DEVICE_COUNTS[@]}"; do
-    if [[ -e "bridge_N${n}.csv" ]]; then
-        echo "Existing file: bridge_N${n}.csv"
-        echo "Move previous results before starting."
+    if [[ -e "$RESULTS_DIR/bridge_N${n}.csv" ]]; then
+        echo "Existing file: $RESULTS_DIR/bridge_N${n}.csv" >&2
+        echo "Choose another RESULTS_DIR for a new experiment." >&2
         exit 1
     fi
 done
 
 for n in "${DEVICE_COUNTS[@]}"; do
-    echo
-    echo "=== Testing ${n} devices, ${CYCLES} cycles ==="
+    echo "Testing N=${n}: ${CYCLES} cycles, ${WARMUP} s warm-up."
 
-    python bridge/ignition_pybridge_diagnostic.py \
+    "$PYTHON" bridge/ignition_pybridge_diagnostic.py \
         --devices "$n" \
-        --cycles "$CYCLES"
+        --cycles "$CYCLES" \
+        --warmup "$WARMUP" \
+        --output-dir "$RESULTS_DIR"
 
-    echo "Saved bridge_N${n}.csv"
+    echo "Saved $RESULTS_DIR/bridge_N${n}.csv"
 done
 
-echo
 echo "All tests completed."
