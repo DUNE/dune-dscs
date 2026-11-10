@@ -17,7 +17,9 @@ Use `--host` and `--port` for other endpoints.
   outlet names, count, GET/GETNEXT/GETBULK and SET on/off. For outlet 1,
   operation OID is `1.3.6.1.4.1.13742.6.4.1.2.1.2.1.1` (off=0, on=1);
   state OID is `1.3.6.1.4.1.13742.6.4.1.2.1.3.1.1` (on=7, off=8).
-  Metering, sensors, power-cycle and SNMPv3 are not implemented.
+  Outlet current and voltage are synthetic, read-only PDU2-MIB readings with
+  three decimal digits. Other metering, external sensors, power-cycle and SNMPv3
+  are not implemented.
 - DAPHNE: ZMQ ROUTER with protobuf envelope v2 on TCP 40001.
 - WIB: ZMQ REP with the bundled WIB protobuf definitions on TCP 1234.
 
@@ -25,6 +27,35 @@ Board configuration and monitoring use simulated state. State changes are
 immediate unless an optional response wait is selected below. Startup, sensor
 acquisition and calibration timing are not simulated. These are standalone
 protocol emulators, without a fleet manager or an OPC UA server.
+
+Add `--vary` for synthetic telemetry that changes with elapsed time:
+
+```sh
+python -m dune_dscs.emulator wib --vary --seed 1
+python -m dune_dscs.emulator daphne --vary --seed 2
+python -m dune_dscs.emulator pdu --vary --seed 3
+python -m dune_dscs.bridge examples/bridge-varying.yaml
+```
+
+WIB temperatures drift by up to 0.5 degrees C. DAPHNE supplies nine synthetic
+general-information readings and increasing record/busy/full counters for all
+40 channels. PDU current and voltage vary while an outlet is on and return zero
+when it is off. The default 60-second drift period can be changed with
+`--vary-period`; a seed gives each device a repeatable phase. Reads do not drive
+the changes. Setpoints, power states, outlet counts and the fixed test register
+keep their configured meanings. `--vary` can be combined with `--timing`.
+
+The varying example publishes 2 WIB, 14 DAPHNE and 4 PDU measurements, plus the
+six common bridge fields per device. Its PDU readings are raw integer mA/mV;
+the MIB's unit and decimal-digit objects identify their scale.
+
+These are demonstration signals, not calibrated sensor or event-rate models.
+DAPHNE bias readings are not derived from AFE DAC settings. The inspected
+server populates `power_plus2p5v` from 3V3PDS, so the example uses that rail name.
+The last DAPHNE-15 capture returned NaN for temperature: the varying example's
+temperature is synthetic. Firmware identity is absent from the bundled
+`GeneralInfo` reply; its native read mapping still needs identifying. The
+envelope's `version=2` is a protocol version, not a firmware version.
 
 Use a response timing profile to repeat measured waits without blocking other devices:
 

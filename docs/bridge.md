@@ -39,6 +39,9 @@ indices to select array entries.
 WIB and DAPHNE field names follow the bundled protobuf definitions. A read
 fetches each requested message group once. DAPHNE `info` readings from the
 current emulator are placeholders; the example uses threshold readback instead.
+For changing synthetic sensors and channel-0 counters, start the emulators
+with `--vary` and use `examples/bridge-varying.yaml`. See the
+[telemetry scope and hardware limits](emulator.md).
 
 ## Common OPC UA view
 

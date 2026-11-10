@@ -10,6 +10,8 @@ from pysnmp.smi import error, instrum
 
 ROOT = (1, 3, 6, 1, 4, 1, 13742, 6)
 SWITCH = ROOT + (4, 1, 2, 1)
+SENSOR_CONFIG = ROOT + (3, 5, 4, 1)
+SENSOR_MEASUREMENT = ROOT + (5, 4, 3, 1)
 
 
 class TimedUdpTransport(udp.UdpTransport):
@@ -49,10 +51,11 @@ class TimedUdpTransport(udp.UdpTransport):
 class Pdu(instrum.AbstractMibInstrumController):
     """Independent outlet state; all outlets start off."""
 
-    def __init__(self, outlets=10):
+    def __init__(self, outlets=10, telemetry=None):
         if not 1 <= outlets <= 256:
             raise ValueError("outlets must be between 1 and 256")
         self.outlets = {index: False for index in range(1, outlets + 1)}
+        self.telemetry = telemetry
 
     def _values(self):
         values = {
@@ -64,6 +67,16 @@ class Pdu(instrum.AbstractMibInstrumController):
             values[SWITCH + (2, 1, outlet)] = v2c.Integer32(int(enabled))
             values[SWITCH + (3, 1, outlet)] = v2c.Integer32(7 if enabled else 8)
             values[ROOT + (3, 5, 3, 1, 3, 1, outlet)] = v2c.OctetString(f"Outlet {outlet}")
+            # PDU2-MIB: current=1, voltage=4; readings use three decimal digits.
+            for sensor, unit, nominal, amplitude in ((1, 2, .35, .05), (4, 1, 120, .5)):
+                index = (1, outlet, sensor)
+                reading = nominal if self.telemetry is None else self.telemetry.analog(
+                    nominal, amplitude, outlet * 2 + sensor)
+                values[SENSOR_CONFIG + (6,) + index] = v2c.Integer32(unit)
+                values[SENSOR_CONFIG + (7,) + index] = v2c.Unsigned32(3)
+                values[SENSOR_MEASUREMENT + (2,) + index] = v2c.Integer32(1)
+                values[SENSOR_MEASUREMENT + (3,) + index] = v2c.Integer32(4)
+                values[SENSOR_MEASUREMENT + (4,) + index] = v2c.Unsigned32(round(reading * 1000) if enabled else 0)
         return values
 
     def read_variables(self, *bindings, **_context):
@@ -99,9 +112,9 @@ class Pdu(instrum.AbstractMibInstrumController):
 class PduAgent:
     """One UDP listener exposing a PDU."""
 
-    def __init__(self, host, port, outlets=10, community="private", timing=None):
+    def __init__(self, host, port, outlets=10, community="private", timing=None, telemetry=None):
         self.host, self.port, self.community = host, port, community
-        self.model = Pdu(outlets)
+        self.model = Pdu(outlets, telemetry=telemetry)
         self.engine = None
         self.responders = ()
         self.timing = timing
