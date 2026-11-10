@@ -245,6 +245,10 @@ def parse_arguments():
         "--warmup", type=float, default=30,
         help="Warm-up duration in seconds (default: 30).",
     )
+    parser.add_argument(
+        "--output-dir", type=Path, default=ROOT / "results",
+        help="CSV directory (default: stress_test/results).",
+    )
     args = parser.parse_args()
 
     if args.cycles < 1:
@@ -260,6 +264,7 @@ def parse_arguments():
 def main():
     """Set up the bridge, poll devices and save measured cycles."""
     args = parse_arguments()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load local modules after locating the shared Protobuf module.
     sys.path.insert(0, str(ROOT))
@@ -301,7 +306,7 @@ def main():
         for device_nodes in nodes.values()
         for variables in device_nodes.values()
     )
-    filename = f"bridge_N{len(devices)}.csv"
+    filename = args.output_dir / f"bridge_N{len(devices)}.csv"
     run_id = uuid.uuid4().hex
 
     # Exclusive creation preserves the existing no-overwrite behaviour.
