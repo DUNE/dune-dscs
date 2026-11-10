@@ -22,8 +22,38 @@ Use `--host` and `--port` for other endpoints.
 - WIB: ZMQ REP with the bundled WIB protobuf definitions on TCP 1234.
 
 Board configuration and monitoring use simulated state. State changes are
-immediate; startup and hardware timing are not simulated. These are standalone
+immediate unless an optional response wait is selected below. Startup, sensor
+acquisition and calibration timing are not simulated. These are standalone
 protocol emulators, without a fleet manager or an OPC UA server.
+
+Use a response timing profile to repeat measured waits without blocking other devices:
+
+```sh
+python -m dune_dscs.emulator pdu --timing examples/timing/pdu-measured.json
+python -m dune_dscs.emulator daphne --timing examples/timing/daphne15-measured.json
+python -m dune_dscs.emulator wib --timing examples/timing/wib-source-estimate.json
+```
+
+The PDU samples were measured from `dune-fd-test01` to the Ethernet-connected
+PX4-54A7CR-A0, serial R1460000103. SNMP GET waits are grouped by variable count.
+The DAPHNE samples came from `np04-onl-004` to `np04-daphne-015` at CERN.
+These are short traces: ten samples per PDU request shape and five per DAPHNE
+operation. They do not establish tail latency under production load.
+
+The WIB profile is a **source estimate**, not a measurement. At firmware source
+revision `ee0a4cd528f6e9a2fef90c205088173b149a91f2`, `GetSensors` contains
+2.466 seconds of fixed waits. I2C, OS, queue and network time are additional.
+The board version and deployed firmware still need checking. The bridge's
+default two-second timeout is too short for this profile; use a longer timeout
+and a polling period suitable for the fleet's concurrency limit.
+
+`delays_ms` maps native operation names to lists of waits in milliseconds.
+Samples repeat in order; operations absent from the file remain immediate.
+Measured round trips are used as added waits, so local emulator and transport
+overhead is additional. DAPHNE general information can contain cached sensor
+values: matching its reply time does not model the age of those measurements.
+SNMP delays hold at most 64 pending datagrams per emulator; excess UDP requests
+are dropped. This is a test limit, not a measured PDU queue size.
 
 Protocol source revisions and hashes are in
 `src/dune_dscs/emulator/protocols/protocol_sources.json`. PDU OIDs follow
@@ -62,5 +92,6 @@ These endpoints are a starting point for bridge tests. Before deployment, check:
 - Mixed monitoring and configuration load, with bounded concurrency and queue sizes.
 - The target devices' authentication and the OPC UA certificate configuration.
 
-Delayed replies, packet loss and frozen telemetry are not simulated. Current
+Response waits are optional. Packet loss, frozen telemetry and the full hardware
+acquisition cycle are not simulated. Current
 results do not establish bridge capacity or hardware compatibility.
