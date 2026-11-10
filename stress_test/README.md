@@ -14,7 +14,6 @@ stress_test/
 ├── bridge/
 │   ├── ignition_pybridge.py
 │   ├── ignition_pybridge_diagnostic.py
-│   ├── bridge_diagnostics.py
 │   ├── zmq_devices_config.py
 │   ├── zmq_sensor_config.py
 │   ├── zmq_devices.yaml
