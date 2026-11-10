@@ -29,6 +29,9 @@ Protocol source revisions and hashes are in
 `src/dune_dscs/emulator/protocols/protocol_sources.json`. PDU OIDs follow
 Raritan PDU2-MIB revision 202305260000Z, DUNE DocDB 32655 v8.
 
+Run the unit tests with `uv run python -m unittest discover -s tests -v`.
+They check reply formats, state readback and rejected requests for each emulator.
+
 ## Connecting a bridge
 
 The emulators use one asyncio event loop per process, with `zmq.asyncio` and
