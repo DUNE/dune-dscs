@@ -1,13 +1,9 @@
 # Mainz Slow Controls Stress Tests
 
 Stress tests for the Python ZeroMQ-to-OPC-UA bridge and the Ignition
-Gateway using distributed device emulators.
-
-Each emulator provides three values: one temperature and two voltages.
-The tests increase the number of devices and record performance,
-resource usage and communication reliability.
-
-## Directory structure
+Gateway using distributed device emulators. Each emulator supplies one
+temperature and two voltages. Tests vary the number of devices and record
+performance, resource usage and communication reliability.
 
 ## Directory structure
 
@@ -28,53 +24,72 @@ stress_test/
 │   ├── monitor_emulators.py
 │   ├── monitor_ignition.py
 │   ├── run_bridge_test.sh
-│   ├── run_bridge_emulator_tests.sh # Tests both bridge measurements and emulators CPU usage
+│   ├── run_bridge_emulator_tests.sh
 │   └── run_ignition_tests.sh
 ├── ignition_monitoring_scripts/
-│   ├── ignition_monitoring_scripts/ignition_tag_diagnostics_configurable.py        # Both Cached and Uncached Gateway timer
-│   ├── ignition_tag_diagnostics.py          # Cached Gateway timer
-│   ├── ignition_tag_diagnostics_uncached.py # Uncached Gateway timer
+│   └── ignition_tag_diagnostics_configurable.py
 ├── plotting/
-│   ├── stress_test_result.py
+│   ├── plot_bridge_results.py
 │   ├── plot_ignition_results.py
-│   ├── plot_bridge_ignition.py
-│   └── plot_timer_comparison.py
-├── results/           # Measurements grouped by test run
-├── figures/           # Generated figures and summary tables
-├── .runtime/          # One emulator process record file per host
+│   ├── plot_bridge_ignition_comparison.py
+│   └── plot_timer_cached_comparisons.py
+├── results/            # Measurements grouped by experiment
+├── figures/            # Generated reports, images and summaries
+├── .runtime/           # Process records, readiness markers and locks
+├── ignition_test_control.json  # Generated bridge–Gateway control file
 ├── zmq_em.proto
 ├── zmq_em_pb2.py
 ├── .gitignore
 └── README.md
 ```
 
-Results, figures and runtime files are local outputs excluded from Git.
-The emulator launchers discard terminal output and do not create logs.
+`results/`, `figures/`, `.runtime/` and `ignition_test_control.json` are
+runtime outputs and should remain excluded from Git. Runtime files and
+output folders are created as needed.
 
-## Environment
+The configurable Gateway script replaces the separate cached and
+uncached timer scripts. The four plotting files above replace the older
+plotting entry points. Keep the plotting files together because they
+reuse shared helper functions.
 
-The launchers use the existing Python environment:
+## Environment and host configuration
 
-```text
-~/DSCS/opcua-env/bin/python
-```
-
-Activate it before running Python commands:
+Run the commands below from the `stress_test` root:
 
 ```bash
 source ~/DSCS/opcua-env/bin/activate
 cd ~/dune-dscs/stress_test
 ```
 
-The scripts use `pyzmq`, `protobuf`, `opcua`, `PyYAML` and `psutil`.
-Plotting also requires `pandas`, `numpy` and `matplotlib`.
+The Bash test runners use `~/DSCS/opcua-env/bin/python` by default.
+Override `PYTHON` when using another environment.
 
-The Protobuf runtime must be compatible with the generated
-`zmq_em_pb2.py` file. Regenerate that file when changing `zmq_em.proto`.
+Python dependencies are `pyzmq`, `protobuf`, `opcua`, `PyYAML` and `psutil`.
+Plotting also requires `pandas`, `numpy` and `matplotlib`. The generated
+`zmq_em_pb2.py` must be compatible with the installed Protobuf runtime;
+regenerate it when changing `zmq_em.proto`.
+
+### Emulator hosts and capacity
+
+The current diagnostic configuration uses Weber03, Weber06, Weber07,
+Weber02, Weber09, Weber10, Weber11, Weber12 and Weber14, in that order.
+Device selection rotates through the hosts, then increments the emulator
+number. Emulator 1 uses port 5555; emulator 100 uses port 5654.
+
+Keep these configurations consistent:
+
+- `EMULATOR_HOSTS` in `bridge/ignition_pybridge_diagnostic.py`.
+- `HOSTS` in `diagnostics/run_bridge_emulator_tests.sh`.
+- `hosts` inside the configurable Ignition Gateway script.
+
+With nine hosts and 100 emulators per host, the deployment provides
+**900 emulators**. Although the diagnostic bridge accepts N from 1 to
+1000, larger loads require additional running emulators and matching
+configuration. Do not assume the command-line limit establishes capacity.
 
 ## Start and stop emulators
 
-Run these commands on each emulator host:
+Run on each configured emulator host:
 
 ```bash
 source ~/DSCS/opcua-env/bin/activate
@@ -82,236 +97,40 @@ cd ~/dune-dscs/stress_test
 bash emulators/create_emulators.sh
 ```
 
-The launcher starts 100 emulators on TCP ports 5555–5654.
-Output is discarded, so no emulator log files are created.
+The launcher starts 100 emulators on ports 5555–5654 and discards their
+output. It does not create emulator log files. Process records are stored
+under `.runtime/`, separately for each host.
 
-One runtime file per host is stored at `.runtime/<hostname>.jsonl`.
-It records the PID, process start time and port of each emulator.
-
-Stop the recorded emulators on the same host:
+Stop the recorded instances on the same host:
 
 ```bash
 bash emulators/stop_emulators.sh
 ```
 
-The stop script verifies ownership, process start time and command
-before sending SIGTERM. It waits up to ten seconds and retains records
-for processes it could not stop.
+The stop script verifies ownership, process start time and command before
+sending SIGTERM. It waits up to ten seconds and retains records for
+processes it could not stop. Keep the records while the corresponding
+emulators are running. These launchers manage instances started by the
+runtime-record launcher.
 
-Keep runtime records while the corresponding emulators are running.
-The stop script manages instances started by this launcher.
-
-
-## Bridge-only test runner
-
-`diagnostics/run_bridge_test.sh` runs the diagnostic bridge for the
-selected device counts. It records bridge measurements without starting
-Ignition or emulator resource monitors.
-
-### Configuration
-
-Edit `DEVICE_COUNTS` near the top of the script:
-
-```bash
-DEVICE_COUNTS=(10 110 210 310 410 510 610 710 810 900)
-```
-
-The default list currently contains only `110`.
-
-Other defaults are:
-
-| Setting | Default |
-|---|---|
-| `CYCLES` | `300` measured cycles |
-| `WARMUP` | `30` seconds |
-| `RESULTS_DIR` | `results/bridge_only/` |
-
-### Run
-
-Start the required emulators, then run:
-
-```bash
-source ~/DSCS/opcua-env/bin/activate
-cd ~/dune-dscs/stress_test
-
-bash diagnostics/run_bridge_test.sh
-```
-
-For a custom experiment folder:
-
-```bash
-RESULTS_DIR=results/bridge_only_repeat \
-bash diagnostics/run_bridge_test.sh
-```
-
-Override cycles and warm-up when needed:
-
-```bash
-CYCLES=10 WARMUP=5 \
-RESULTS_DIR=results/bridge_validation \
-bash diagnostics/run_bridge_test.sh
-```
-
-### Output
-
-Each device count produces:
-
-```text
-results/bridge_only/bridge_N<number>.csv
-```
-
-The directory is created automatically. The runner refuses to overwrite
-existing bridge CSVs and does not resume partial runs.
-
-For a test without Gateway diagnostic activity, disable the Ignition
-diagnostic timer in Designer before starting.
-
-## Bridge and emulator resource test runner
-
-`diagnostics/run_bridge_emulator_tests.sh` runs the diagnostic bridge
-while measuring emulator CPU usage and resident memory on each
-configured host.
-
-It does not start the Ignition resource monitor.
-
-### Preparation
-
-Before running:
-
-1. Start the emulators on every configured host.
-2. Check that `HOSTS` matches the host list in the diagnostic bridge.
-3. Confirm the shared repository and Python environment are accessible
-   at the same paths on each host.
-4. Confirm passwordless SSH works from the runner host to the remote
-   emulator hosts.
-
-For example:
-
-```bash
-ssh -o BatchMode=yes lgoncalve@134.93.131.35 hostname
-```
-
-The local host is monitored directly. Remote hosts are monitored through
-SSH.
-
-For a test without Gateway diagnostic activity, disable the Ignition
-diagnostic timer in Designer.
-
-### Configuration
-
-Edit `DEVICE_COUNTS` and `HOSTS` near the top of the script.
-
-Defaults are:
-
-| Setting | Default |
-|---|---|
-| Device counts | `10 110 210 310 410 510 610 710 810 900` |
-| `CYCLES` | `300` measured cycles |
-| `WARMUP` | `30` seconds |
-| `RESULTS_DIR` | `results/emulator_bridge/` |
-
-### Run
-
-```bash
-source ~/DSCS/opcua-env/bin/activate
-cd ~/dune-dscs/stress_test
-
-bash diagnostics/run_bridge_emulator_tests.sh
-```
-
-For a custom experiment folder:
-
-```bash
-RESULTS_DIR=results/emulator_bridge_repeat \
-bash diagnostics/run_bridge_emulator_tests.sh
-```
-
-For a shorter validation run:
-
-```bash
-CYCLES=10 WARMUP=5 \
-RESULTS_DIR=results/emulator_bridge_validation \
-bash diagnostics/run_bridge_emulator_tests.sh
-```
-
-These overrides retain the device-count list configured in the script.
-
-### Output and monitoring
-
-For each device count, the selected results folder contains:
-
-```text
-bridge_N<number>.csv
-emulators_N<number>_Weber02.csv
-emulators_N<number>_Weber03.csv
-...
-```
-
-Each emulator CSV records:
-
-- UTC timestamp.
-- Number of accessible monitored emulator processes.
-- Sum of process CPU usage.
-- Sum of process resident memory in MB.
-
-The monitors track this user's emulator processes found at startup,
-including idle emulators. Summed RSS can count shared memory pages
-more than once.
-
-The runner waits for a sample from every host before starting the
-bridge. Emulator monitoring includes bridge startup and warm-up;
-the bridge CSV contains measured cycles only.
-
-At the end, a shared stop marker ends the monitors. This stops resource
-monitoring, while the emulators continue running.
-
-Errors appear in the terminal. No separate `.err` files are created.
-Existing result files are protected from overwriting. For a fresh
-experiment, choose a new `RESULTS_DIR`.
-
-The runner verifies the expected bridge cycles before reporting
-completion. It does not resume partial runs.
 ## Bridge
 
-The `bridge/` folder contains the ZeroMQ-to-OPC-UA bridge and its
-configuration.
+### Files and configuration
 
-### Files
-
-| File | Purpose |
+| File under `bridge/` | Purpose |
 |---|---|
-| `ignition_pybridge.py` | Runs the bridge continuously using the device YAML configuration. |
-| `ignition_pybridge_diagnostic.py` | Runs a fixed number of polling cycles and records stress-test measurements. |
-| `zmq_devices_config.py` | Loads the device YAML configuration. |
+| `ignition_pybridge.py` | Continuously polls devices listed in the device YAML. |
+| `ignition_pybridge_diagnostic.py` | Generates a device list for N and records measured polling cycles. |
+| `zmq_devices_config.py` | Loads the continuous bridge's device configuration. |
 | `zmq_sensor_config.py` | Loads the sensor-field configuration. |
-| `zmq_devices.yaml` | Lists devices used by the continuous bridge. |
-| `zmq_sensors.yaml` | Defines the sensor fields and number of values exposed per field. |
+| `zmq_devices.yaml` | Devices for the continuous bridge. |
+| `zmq_sensors.yaml` | Sensor fields and number of values per field. |
 
-Both bridge versions use the shared `zmq_em_pb2.py` module at the
-`stress_test` root.
+Both bridge versions use `zmq_em_pb2.py` at the `stress_test` root.
+The diagnostic bridge selects devices through `EMULATOR_HOSTS`, rather
+than reading `zmq_devices.yaml`.
 
-### Preparation
-
-Activate the Python environment and work from the `stress_test` root:
-
-```bash
-source ~/DSCS/opcua-env/bin/activate
-cd ~/dune-dscs/stress_test
-```
-
-Start the emulators on their configured hosts before running the bridge.
-Run one bridge instance per host using TCP port 4840.
-
-### Continuous bridge
-
-Use this version to expose readings continuously without recording
-stress-test metrics:
-
-```bash
-python bridge/ignition_pybridge.py
-```
-
-It reads devices from `bridge/zmq_devices.yaml`. For example:
+An entry in the continuous bridge's device YAML looks like:
 
 ```yaml
 zmqdevice:
@@ -321,283 +140,176 @@ zmqdevice:
     port: 5555
 ```
 
-Each entry identifies a device, its host and its emulator port.
+Start the required emulators before either bridge. Only one bridge can
+listen on port 4840 on a given host at a time.
 
-Sensor fields are loaded from `bridge/zmq_sensors.yaml`. The bridge
-polls the devices sequentially, with a one-second delay before each
-polling cycle and a two-second receive timeout per request.
+### Continuous bridge
 
-Press Ctrl+C to stop the bridge.
+```bash
+python bridge/ignition_pybridge.py
+```
 
-### Diagnostic bridge
+This exposes readings without writing stress-test measurements. It uses
+a one-second delay before each polling cycle and a two-second receive
+timeout per request. Press Ctrl+C to stop it.
 
-Run from the `stress_test` root:
+### Diagnostic bridge: one device count
 
 ```bash
 python bridge/ignition_pybridge_diagnostic.py \
     --devices 10 \
     --cycles 300 \
     --warmup 30 \
-    --output-dir results/timer_disabled
+    --output-dir results/bridge_only
 ```
 
-| Option | Meaning |
+| Option | Meaning and default |
 |---|---|
-| `--devices` | Required number of emulators, from 1 to 1000. |
-| `--cycles` | Measured polling cycles after warm-up. Default is 10. |
-| `--warmup` | Warm-up duration in seconds. Default is 30. |
-| `--output-dir` | CSV destination. Defaults to `stress_test/results`. Relative paths use the current working directory. |
+| `--devices` | Required device count, from 1 to 1000; check actual emulator capacity. |
+| `--cycles` | Measured polling cycles; default `10`. |
+| `--warmup` | Warm-up duration in seconds; default `30`. |
+| `--output-dir` | Measurement destination; default `stress_test/results`. |
+| `--timer-enabled` | Publish recurring Gateway collection setting; default `true`. |
+| `--cache-enabled` | Publish Gateway caching setting; default `true`. |
+| `--wait-for-ignition` | Wait for Gateway readiness before warm-up; off unless supplied. |
+| `--setup-timeout` | Readiness timeout in seconds; default `60`. |
 
-The output directory is created automatically. This example saves
-`results/timer_disabled/bridge_N10.csv`. Existing CSV files are never
-overwritten.
+The example creates `results/bridge_only/bridge_N10.csv`. Output folders
+are created automatically. Existing bridge CSVs are never overwritten.
+The diagnostic bridge uses a ten-second receive timeout per request.
 
-The `timer_disabled` folder name labels the experiment. Disable the
-Ignition diagnostic timer in Designer before running this case.
+Warm-up is measured in seconds and completes at a polling-cycle
+boundary. Warm-up cycles update nodes but are excluded from the bridge
+CSV. Measured cycle durations include the one-second polling delay.
+300 cycles are not necessarily 300 seconds.
 
-The shared `ignition_test_control.json` remains at the `stress_test` root.
-
-
-### Diagnostic output
-
-The diagnostic bridge creates `bridge_N<number>.csv` in the current
-working directory and refuses to overwrite an existing file.
-
-Each measured cycle records:
-
-- UTC timestamp, cycle number, device count and variable count.
-- Polling-cycle duration, including the one-second delay.
-- Bridge process CPU usage and resident memory.
-- Request attempts, successes, receive timeouts and errors.
-- Failure percentage and successful acquisition rate.
-- Mean, median, P95 and P99 latency for successful requests.
-- ZeroMQ request and response payload throughput.
-- OPC UA variable write count and write rate.
-- Total response-parsing and node-update time.
-
-Warm-up cycles update the nodes but are excluded from the CSV
-measurements.
-
-The bridge also updates `ignition_test_control.json` at the
-`stress_test` root with the device count, run ID and active state.
-The Ignition diagnostic timer uses this file to identify the test.
-
-After a completed test, store its CSV with the corresponding run under
-`results/`.
+The bridge writes the device count, run ID, active state, diagnostic
+settings and selected output directory to `ignition_test_control.json`
+at the `stress_test` root. A folder name alone does not enable or disable
+Gateway diagnostics.
 
 ### OPC UA connection
 
-Both versions expose the same endpoint:
+Both bridge versions expose:
 
 ```text
 opc.tcp://<bridge-host>:4840/freeopcua/server/
 ```
 
-Use `127.0.0.1` for `<bridge-host>` when Ignition runs on the same
-computer. Otherwise, use the bridge computer's IP address.
+Use `127.0.0.1` when Ignition and the bridge run on the same computer;
+otherwise use the bridge host's IP address. Configure anonymous
+access, Security Policy `None` and Security Mode `None`.
 
-The configured connection uses anonymous authentication with security
-policy and mode set to None.
-
-Sensor node identifiers retain this format:
+Sensor node identifiers use the following format:
 
 ```text
 TPC<tpc>/WIB<device>/<field>/<index>
 ```
 
+For example, `TPC3/WIB1/Temp1/0`.
+
+### Bridge measurements
+
+Each `bridge_N<number>.csv` contains one row per measured cycle:
+
+- UTC timestamp, cycle number, device count and variable count.
+- Polling-cycle duration, process CPU usage and resident memory.
+- Request attempts, successes, receive timeouts and errors.
+- Failure percentage and successful acquisition rate.
+- Mean, median, P95 and P99 latency of successful requests.
+- ZeroMQ transmit and receive payload throughput.
+- OPC UA variable-write count and write rate.
+- Total response-parsing and node-update time.
+
+## Automated test runners
+
+Edit `DEVICE_COUNTS` in the selected runner to choose the tested loads.
+The other settings listed below can be supplied as environment variables.
+
+| Runner under `diagnostics/` | Default device counts | Default results folder |
+|---|---|---|
+| `run_bridge_test.sh` | `110` | `results/bridge_only/` |
+| `run_bridge_emulator_tests.sh` | `10 110 210 310 410 510 610 710 810 900` | `results/emulator_bridge/` |
+| `run_ignition_tests.sh` | `10 110 210 310 410 510 610 710 810 900` | Depends on diagnostic mode; default `results/timer_cached/`. |
+
+All three runners default to `CYCLES=300` measured cycles and
+`WARMUP=30` seconds. Relative `RESULTS_DIR` paths are resolved from the
+`stress_test` root, because the runners change to that directory.
+
+### Bridge-only sequence
+
+```bash
+bash diagnostics/run_bridge_test.sh
+```
+
+This starts no Ignition or emulator resource monitors. It refuses to
+overwrite existing bridge CSVs and does not resume partial runs.
+
+For a shorter run in another folder:
+
+```bash
+CYCLES=10 WARMUP=5 RESULTS_DIR=results/bridge_validation \
+bash diagnostics/run_bridge_test.sh
+```
+
+For isolated bridge measurements, disable the Gateway diagnostic timer
+and disconnect OPC UA clients that should not contribute to the load.
+The runner does not stop existing Gateway activity.
+
+### Bridge and emulator-resource sequence
+
+```bash
+bash diagnostics/run_bridge_emulator_tests.sh
+```
+
+Preparation:
+
+1. Start emulators on every configured host.
+2. Match `HOSTS` to the bridge's host list.
+3. Make the shared repository and Python environment available at the
+   same absolute paths on every host.
+4. Confirm passwordless SSH from the runner host to remote emulator hosts.
+
 For example:
 
-```text
-TPC3/WIB1/Temp1/0
+```bash
+ssh -o BatchMode=yes lgoncalve@134.93.131.35 hostname
 ```
 
-### Automated tests
+The local host is monitored directly; remote hosts are monitored through
+SSH. `REMOTE_USER` defaults to the current username and can be overridden.
 
-Run the configured bridge-only sequence:
+For a custom experiment:
 
 ```bash
-bash diagnostics/run_bridge_test.sh
+CYCLES=10 WARMUP=5 RESULTS_DIR=results/emulator_bridge_validation \
+bash diagnostics/run_bridge_emulator_tests.sh
 ```
 
-Run the sequence with Ignition resource monitoring on the Gateway host:
+Outputs include `bridge_N<number>.csv` and one emulator-resource CSV per
+host and device count, such as `emulators_N110_Weber02.csv`.
 
-```bash
-bash diagnostics/run_ignition_tests.sh
-```
+`monitor_emulators.py` records the accessible emulator processes found
+at monitor startup, including idle emulators. Each sample contains UTC
+time, process count, summed CPU usage and summed resident memory.
+Summed RSS can count shared pages more than once.
 
-Check device counts, cycle counts and warm-up settings in the selected
-runner before starting.
+The runner waits for samples from every host before starting the bridge.
+Emulator monitoring includes startup and warm-up; bridge CSVs contain
+measured cycles only. At the end, the monitors stop and emulators remain
+running. Errors appear in the terminal; no separate `.err` files are
+created. The runner protects existing files and does not resume partial
+runs. Choose another `RESULTS_DIR` for an independent experiment.
 
+## Ignition Gateway setup
 
+The Ignition runner measures the local Gateway Java process. Run it on
+the Gateway host, Weber09 in the Mainz setup. This avoids remote process
+monitoring; Ignition itself does not require the bridge on the same host.
 
+### Install the configurable timer
 
-
-
-
-
-## Bridge stress test
-
-Run commands from the `stress_test` root with the Python environment
-activated.
-
-Run one device-count configuration:
-
-```bash
-python bridge/ignition_pybridge_diagnostic.py --devices 10 --cycles 300
-```
-
-Run the configured bridge test sequence:
-
-```bash
-bash diagnostics/run_bridge_test.sh
-```
-
-Check the device counts and cycle count in the runner before starting.
-Bridge YAML configuration files are stored under `bridge/`.
-
-The bridge records:
-
-- Polling-cycle duration.
-- Process CPU usage and resident memory.
-- Request attempts, successes, timeouts and errors.
-- Successful acquisition rate.
-- Request latency statistics.
-- ZeroMQ payload throughput in both directions.
-- OPC UA variable write count and rate.
-- Response parsing and node-update time.
-
-## Ignition Gateway diagnostic scripts
-
-The `diagnostics/` folder contains two Gateway timer scripts:
-
-| File | Behaviour |
-|---|---|
-| `ignition_tag_diagnostics.py` | Caches validated tag paths once per run and reuses them. |
-| `ignition_tag_diagnostics_uncached.py` | Rebuilds tag lists and browses paths on every timer execution. |
-
-Both scripts measure tag completeness, tag quality, OPC UA connection
-state and diagnostic collection time. They also record elapsed time and
-timer-thread CPU time for each diagnostic operation.
-
-### Install in Ignition Designer
-
-1. Open the stress-test project in Ignition Designer.
-2. In the Project Browser, expand **Scripting → Gateway Events → Timer**.
-3. Right-click **Timer**, create a new timer script and name it
-   `BridgeStressMonitor`.
-4. Set the timer properties:
-
-   | Property | Setting |
-   |---|---|
-   | Delay | `5000` ms |
-   | Delay Type | `Fixed Delay` |
-   | Threading | `Dedicated` |
-   | Enabled | Checked |
-
-5. Open the timer editor and replace its contents with the complete
-   `handleTimerEvent()` function from the selected file. Keep one
-   function definition.
-6. Save the project to apply the Gateway script.
-
-Enable only one diagnostic timer version at a time. Both versions
-manage the same test tags and write to the same CSV files.
-
-Fixed Delay waits five seconds after an execution finishes before
-starting the next one.
-
-### Configuration
-
-Check these settings inside the selected script:
-
-```python
-BASE_DIR = "/uni-mainz.de/homes/lgoncalve/dune-dscs/stress_test"
-OPC_SERVER = "bridge leonor 09"
-```
-
-`BASE_DIR` must be accessible to the Ignition Gateway process.
-`OPC_SERVER` must match the OPC UA connection name configured in
-Ignition.
-
-The host ordering in the timer script must match `EMULATOR_HOSTS`
-in `bridge/ignition_pybridge_diagnostic.py`.
-
-### Running a test
-
-Start the emulators and confirm the Ignition trial or licence is active.
-Then run the diagnostic bridge or the Ignition test runner.
-
-The timer reads `ignition_test_control.json` at the `stress_test` root.
-It collects measurements while the control file marks a run as active.
-
-For tests without diagnostic monitoring, uncheck **Enabled** on the
-timer and save the project before starting.
-
-### Output files
-
-Both versions append measurements to:
-
-```text
-results/ignition_tag_diagnostics.csv
-results/ignition_timer_profile.csv
-```
-
-The results directory is created automatically. These destinations are
-configured inside the Gateway script; the bridge's `--output-dir`
-option controls only the bridge CSV.
-
-The cached version checks tag paths at setup and again at the end of
-the run. Its CSV completeness counts come from the setup check.
-Tag quality and connection state are sampled on every active execution.
-
-### Process resource monitoring
-
-Gateway CPU usage and RAM are measured separately by
-`diagnostics/monitor_ignition.py`, started by the Ignition test runner.
-The Gateway timer's CPU timings describe its own thread and individual
-diagnostic operations.
-
-## Ignition stress test
-
-Before starting:
-
-1. Confirm the emulators are running on the configured hosts.
-2. Confirm the Ignition Gateway is running and its trial or licence is active.
-3. Confirm the OPC UA connection points to the bridge host.
-4. Set the diagnostic timer to the intended enabled or disabled state.
-5. Check device counts, warm-up and measured cycles in the runner.
-
-Run on the host containing the Ignition Gateway:
-
-```bash
-cd ~/dune-dscs/stress_test
-bash diagnostics/run_ignition_tests.sh
-```
-
-`diagnostics/monitor_ignition.py` measures the local Gateway Java
-process's CPU usage and resident memory. The bridge diagnostic code
-measures the bridge's own resources.
-
-When enabled, the Ignition Gateway timer script records tag
-completeness, tag quality, OPC UA connection state and diagnostic
-collection time. It reads `ignition_test_control.json` at the
-`stress_test` root to identify the active run.
-
-The runner supports resuming tests. Its completion check uses the
-corresponding bridge CSV, so an existing completed CSV can cause a
-device count to be skipped.
-
-
-## Ignition stress test
-
-`diagnostics/run_ignition_tests.sh` runs the bridge for several device
-counts while measuring the Ignition Gateway's CPU usage and RAM.
-
-Run it on the computer hosting the Ignition Gateway. In the Mainz
-setup, this is Weber09.
-
-### Gateway preparation
-
-Install the function from:
+Use:
 
 ```text
 ignition_monitoring_scripts/ignition_tag_diagnostics_configurable.py
@@ -607,149 +319,94 @@ In Ignition Designer:
 
 1. Open the stress-test project.
 2. Expand **Scripting → Gateway Events → Timer**.
-3. Create or open `BridgeStressMonitor`.
+3. Create or open a timer named `BridgeStressMonitor`.
 4. Replace its function with the complete `handleTimerEvent()` function
-   from the configurable script.
-5. Use these settings:
-
-   | Property | Value |
-   |---|---|
-   | Delay | `5000` ms |
-   | Delay Type | `Fixed Delay` |
-   | Threading | `Dedicated` |
-   | Enabled | Checked |
-
+   from the configurable file. Keep one function definition.
+5. Set **Delay** to `5000` ms, **Delay Type** to `Fixed Delay`,
+   **Threading** to `Dedicated` and **Enabled** to checked.
 6. Save the project.
 
-Use one diagnostic timer. The configurable script replaces the
-separate cached and uncached versions for these tests.
+Use only one diagnostic timer. Fixed Delay waits five seconds after an
+execution finishes before starting the next one.
 
-Keep the Gateway timer enabled in Designer for every automated mode.
-The runner controls whether it performs recurring diagnostic collection.
+Inside the installed function, check:
 
-Before testing, confirm:
-
-- The Ignition trial or licence is active.
-- The OPC UA connection name matches `OPC_SERVER` in the Gateway script.
-- The emulator hosts and ordering match the bridge configuration.
-- Enough emulators are running for the selected device counts.
-
-### Default settings
-
-| Setting | Default |
-|---|---|
-| Device counts | `10 110 210 310 410 510 610 710 810 900` |
-| Measured cycles per device count | `300` |
-| Warm-up | `30` seconds |
-| `TIMER_ENABLED` | `true` |
-| `CACHE_ENABLED` | `true` |
-| Results folder | `results/timer_cached/` |
-
-Edit `DEVICE_COUNTS` near the top of `run_ignition_tests.sh` to change
-the tested loads. The other settings below can be supplied as
-environment variables.
-
-### Run the default case
-
-```bash
-source ~/DSCS/opcua-env/bin/activate
-cd ~/dune-dscs/stress_test
-
-bash diagnostics/run_ignition_tests.sh
+```python
+BASE_DIR = "/uni-mainz.de/homes/lgoncalve/dune-dscs/stress_test"
+OPC_SERVER = "bridge leonor 09"
 ```
 
-This enables diagnostic collection with cached tag paths.
+`BASE_DIR` must be accessible to the Gateway process. `OPC_SERVER` must
+match its configured OPC UA connection name. Match the `hosts` ordering
+to the diagnostic bridge, and confirm the Ignition trial or licence is
+active.
 
-### Case 1 — Diagnostic collection disabled
+Keep the timer enabled in Designer for every automated mode below.
+`TIMER_ENABLED=false` disables recurring diagnostic collection through
+the control file; it does not uncheck the Designer timer.
+
+## Ignition test modes
+
+The runner starts the diagnostic bridge and the local resource monitor
+for each N. Its defaults are `TIMER_ENABLED=true` and `CACHE_ENABLED=true`.
+
+| Collection | Caching | Default experiment folder |
+|---|---|---|
+| Disabled | Ignored | `results/diagnostics_disabled/` |
+| Enabled | Off | `results/timer_uncached/` |
+| Enabled | On | `results/timer_cached/` |
+
+### Disabled diagnostic collection
 
 ```bash
 TIMER_ENABLED=false \
 bash diagnostics/run_ignition_tests.sh
 ```
 
-Results are saved under:
+Ignition still creates the expected tags and checks initial readiness.
+Once ready, the timer skips recurring collection but continues checking
+the control file periodically. This mode differs from disabling the
+entire timer in Designer.
 
-```text
-results/diagnostics_disabled/
-```
-
-Ignition configures the expected tags and checks their initial quality.
-Once ready, the timer skips recurring diagnostic collection.
-
-Caching is ignored in this mode.
-
-The Gateway timer still reads the control file every five seconds.
-This differs from unchecking **Enabled** in Designer, which stops the
-timer entirely.
-
-### Case 2 — Diagnostic collection enabled, without caching
+### Enabled, uncached collection
 
 ```bash
 TIMER_ENABLED=true CACHE_ENABLED=false \
 bash diagnostics/run_ignition_tests.sh
 ```
 
-Results are saved under:
+The Gateway rebuilds tag lists and browses paths on each diagnostic
+execution. Tags are created when a new run starts.
 
-```text
-results/timer_uncached/
-```
-
-The Gateway rebuilds tag lists and browses tag paths on every diagnostic
-execution. Tags are created only when a new run starts.
-
-### Case 3 — Diagnostic collection enabled, with caching
+### Enabled, cached collection
 
 ```bash
 TIMER_ENABLED=true CACHE_ENABLED=true \
 bash diagnostics/run_ignition_tests.sh
 ```
 
-Results are saved under:
-
-```text
-results/timer_cached/
-```
-
-The Gateway builds and validates tag paths once per run, then reuses
-them for subsequent reads. It checks completeness again when the run
-ends.
-
-In this mode, CSV completeness counts come from the initial check.
-Quality and connection state are sampled during recurring collection.
-
-### Change cycles and warm-up
-
-For example, run the cached case with ten measured cycles and
-five seconds of warm-up:
+This is also the default when running the script without overrides:
 
 ```bash
-TIMER_ENABLED=true CACHE_ENABLED=true \
-CYCLES=10 WARMUP=5 \
-RESULTS_DIR=results/cached_validation \
 bash diagnostics/run_ignition_tests.sh
 ```
 
-Warm-up is measured in seconds.
+The Gateway builds and validates paths once per run, then reuses them.
+Cached completeness counts come from the initial check; tag quality and
+connection state are sampled during recurring collection. An end-of-run
+path audit is written to the Gateway logger.
 
-### Start an experiment in a custom folder
-
-Set `RESULTS_DIR` to choose the output folder when starting any case:
+### Custom experiment folder, cycles and warm-up
 
 ```bash
 TIMER_ENABLED=true CACHE_ENABLED=false \
-RESULTS_DIR=results/my_experiment \
+CYCLES=10 WARMUP=5 RESULTS_DIR=results/my_experiment \
 bash diagnostics/run_ignition_tests.sh
 ```
 
-The folder is created automatically. Bridge measurements, Ignition
-measurements and test settings are saved there.
-
-Use a new folder name for each independent experiment.
-
-### Repeat an experiment
-
-Choose a new folder to retain the previous measurements:
+The runner passes the selected output folder to both the bridge and
+Gateway script. All experiment measurements are saved there. Use a new
+folder for an independent repeat, for example:
 
 ```bash
 TIMER_ENABLED=true CACHE_ENABLED=true \
@@ -757,187 +414,47 @@ RESULTS_DIR=results/timer_cached_repeat \
 bash diagnostics/run_ignition_tests.sh
 ```
 
-Relative results paths are resolved from the `stress_test` root.
+### Sequence and output files
 
-The selected output directory is passed to the bridge and the Gateway
-script automatically.
+For each N, the runner starts resource monitoring, starts the bridge,
+waits for Good tag quality and a connected OPC UA state, performs warm-up,
+and then records the requested measured cycles. Gateway setup defaults
+to a 60-second readiness timeout.
 
-### What happens during each device-count test
-
-1. The runner checks for completed or unfinished measurements.
-2. The Python monitor starts measuring the local Ignition Java process.
-3. The bridge starts and publishes the device count and test settings.
-4. Ignition creates the expected tags.
-5. The bridge waits for Good tag quality and a connected OPC UA state.
-6. The bridge performs warm-up, followed by the measured polling cycles.
-7. The runner stops the resource monitor and verifies the outputs.
-
-Gateway setup has a default timeout of 60 seconds.
-
-### Output files
-
-Each experiment folder contains:
-
-| File | Contents |
+| File in the selected experiment folder | Contents |
 |---|---|
 | `test_settings.json` | Device counts, cycles, warm-up and diagnostic mode. |
-| `bridge_N<number>.csv` | Bridge measurements for one device count. |
-| `ignition_resources.csv` | Gateway CPU and RAM samples across device counts. |
-| `ignition_tag_diagnostics.csv` | Tag quality, completeness and connection samples when collection is enabled. |
-| `ignition_timer_profile.csv` | Diagnostic operation timings when collection is enabled. |
+| `bridge_N<number>.csv` | Bridge measurements for N. |
+| `ignition_resources.csv` | Gateway process CPU and RAM across device counts. |
+| `ignition_tag_diagnostics.csv` | Periodic tag and connection diagnostics when collection is enabled. |
+| `ignition_timer_profile.csv` | Per-operation elapsed and timer-thread CPU time when collection is enabled. |
 
-The resource monitor includes setup, warm-up and measured cycles.
-The bridge CSV includes only measured cycles.
+Gateway process resources are measured by `diagnostics/monitor_ignition.py`,
+not by the bridge or the Gateway timer. These samples include setup,
+warm-up and measured cycles. Bridge CSVs contain measured cycles only.
 
-The shared control file remains at the `stress_test` root. Gateway
-readiness status and temporary monitor files are stored under
-`.runtime/`.
+The control file stays at the `stress_test` root. Readiness status,
+monitor markers and locks are stored under `.runtime/`.
 
 ### Resume an interrupted experiment
 
-Run the same command with the same settings and results folder.
+Rerun the same command with the same settings and `RESULTS_DIR`.
+Completed configurations are skipped. An unfinished N has its previous
+samples removed and is repeated.
 
-Completed device counts are skipped. For an unfinished device count,
-the runner removes its previous samples and repeats that configuration.
-
-A completed bridge CSV must have the expected cycles and associated
-Ignition resource samples. Enabled collection also requires Gateway
-diagnostic and profiling samples.
-
-If the folder's saved settings differ, the runner stops. Choose a new
-`RESULTS_DIR` for a different experiment.
-
-
-## Results and plots
-
-Keep each completed test run in its own folder under `results/`.
-Distinguish between:
-
-- Timer-enabled and timer-disabled runs.
-- Original and cached diagnostic scripts.
-- Complete runs and partial repeats.
-
-The current runners write measurement files at the `stress_test` root.
-Move completed measurements into their run folder before starting a
-separate experiment.
-
-Generate plots from the `stress_test` root:
-
-```bash
-python plotting/stress_test_result.py
-python plotting/plot_ignition_results.py
-python plotting/plot_bridge_ignition.py
-python plotting/plot_timer_comparison.py
-```
-
-The plotting scripts read archived measurements under `results/` and
-save figures and summary tables under `figures/`.
-
-Check the dataset paths in each plotting script before running it.
-Existing figures with the same output names are overwritten.
-
-## Ignition Gateway script path
-
-The diagnostic timer script is stored in Ignition Designer and must
-use the same base directory as the bridge:
-
-```python
-BASE = "/uni-mainz.de/homes/lgoncalve/dune-dscs/stress_test"
-```
-
-Replace any remaining references to `Tutorials/workshop2026` in that
-Gateway script.
-
-## Plot bridge results
-
-Run commands from the `stress_test/` directory with the Python
-environment activated.
-
-`plotting/plot_bridge_results.py` combines bridge performance plots
-and peak analysis. It reads files named `bridge_N<number>.csv` from
-one selected experiment folder.
-
-### Bridge-only results
-
-```bash
-python plotting/plot_bridge_results.py \
-    --data-dir results/bridge_only
-```
-
-### Bridge and Ignition resource comparison
-
-Provide the folder containing `ignition_resources.csv`:
-
-```bash
-python plotting/plot_bridge_results.py \
-    --data-dir results/timer_disabled_complete \
-    --ignition-dir results/timer_disabled_complete
-```
-
-The Ignition comparison includes CPU usage and resident memory.
-It uses all resource samples in the selected file, which may include
-warm-up.
-
-### Choose an output folder
-
-```bash
-python plotting/plot_bridge_results.py \
-    --data-dir results/my_experiment \
-    --output-dir figures/my_experiment
-```
-
-By default, outputs are saved under `figures/<experiment folder name>/`.
-
-### Generated outputs
-
-- `bridge_results.pdf`: individual cycle-duration plots and measurements
-  versus device count, including resource usage, acquisition and write
-  rates, latency, errors, payload throughput and processing time.
-- `bridge_peak_analysis.pdf`: delay histograms, slow-cycle frequency,
-  peak magnitude and cycle-timing diagnostics.
-- Individual figures saved as PNG files.
-- CSV summaries and input-file records.
-
-A slow cycle defaults to more than **0.1 seconds above the median**
-for its device count. The report also shows the percentage of cycles
-more than **0.5 seconds above the median**.
-
-To save only PDFs and summary tables, add `--no-images`.
-
-View all available options:
-
-```bash
-python plotting/plot_bridge_results.py --help
-```
-
-Measurement files are not modified. Reusing an output folder overwrites
-reports with matching filenames.
+Completion requires the expected bridge cycles and associated resource
+samples. Enabled collection also requires tag-diagnostic and profiling
+samples. A mismatch with saved experiment settings stops the runner;
+choose a new folder for different settings.
 
 ## Plotting results
 
-Run plotting commands from the `stress_test/` directory:
+All commands below run from the `stress_test` root. Select one experiment
+per input folder; do not pool independent repeats under the same N.
+Bridge inputs use exactly `bridge_N<number>.csv`. Suffixed repeats such
+as `bridge_N900_1.csv` are not selected.
 
-```bash
-cd ~/dune-dscs/stress_test
-source ~/DSCS/opcua-env/bin/activate
-```
-
-Input paths identify experiment folders under `results/`.
-Generated reports, figures and summary tables go under `figures/`.
-
-Measurement CSV files are never modified. Reusing an output directory
-overwrites generated files with matching names.
-
-### 1. Bridge results
-
-`plotting/plot_bridge_results.py` analyses bridge measurements only.
-
-It reads files named `bridge_N<number>.csv` and produces:
-
-- Individual cycle-duration plots.
-- Bridge measurements versus device count.
-- Compact timeout and error graphs.
-- Slow-cycle histograms, peak frequency and timing diagnostics.
+### Bridge-only report
 
 ```bash
 python plotting/plot_bridge_results.py \
@@ -945,28 +462,19 @@ python plotting/plot_bridge_results.py \
     --output-dir figures/bridge_only
 ```
 
-Main reports:
+This produces individual cycle plots, measurements versus N, compact
+error graphs and slow-cycle analysis. Main PDFs:
 
 - `bridge_results.pdf`
 - `bridge_peak_analysis.pdf`
 
-Individual PNG figures and CSV summaries are saved alongside the PDFs.
+Individual PNGs, summary CSVs and input/settings records are saved in the
+same folder. A slow cycle defaults to more than 0.1 s above its run's
+median; a separate plot counts cycles more than 0.5 s above the median.
+Use `--slow-threshold` to change the first threshold. The timing breakdown
+assumes a one-second fixed polling delay; use `--poll-sleep` if changed.
 
-### 2. Ignition results
-
-`plotting/plot_ignition_results.py` analyses one Ignition experiment.
-
-Required input:
-
-- `ignition_resources.csv`
-
-Optional input:
-
-- `ignition_tag_diagnostics.csv`
-
-It plots Gateway CPU and resident memory, high-CPU sample frequency,
-and available tag-quality, completeness, connection and diagnostic
-collection-time measurements.
+### Ignition-only report
 
 ```bash
 python plotting/plot_ignition_results.py \
@@ -974,15 +482,18 @@ python plotting/plot_ignition_results.py \
     --output-dir figures/ignition_disabled
 ```
 
-The main report is `ignition_results.pdf`.
+Required input: `ignition_resources.csv`.
+Optional input: `ignition_tag_diagnostics.csv`.
 
-This script needs no bridge CSVs. It uses all recorded Ignition resource
-samples for each N, including setup and warm-up if present.
+This plots Gateway CPU and resident memory, high-CPU sample frequency,
+and available tag quality, completeness, connection state and diagnostic
+collection time. The main report is `ignition_results.pdf`.
 
-### 3. Bridge–Ignition resource comparison
+No bridge files are needed. All recorded resource samples for each N are
+used, including setup and warm-up if present. Collection time is elapsed
+time for the diagnostic checks, not request latency or thread CPU time.
 
-`plotting/plot_bridge_ignition_comparison.py` compares CPU usage and
-resident memory between the bridge and Ignition.
+### Bridge–Ignition resource comparison
 
 ```bash
 python plotting/plot_bridge_ignition_comparison.py \
@@ -991,43 +502,36 @@ python plotting/plot_bridge_ignition_comparison.py \
     --output-dir figures/bridge_ignition_comparison
 ```
 
-The bridge folder must contain `bridge_N<number>.csv` files.
-The Ignition folder must contain `ignition_resources.csv`.
+The bridge folder supplies `bridge_N<number>.csv`; the Ignition folder
+supplies `ignition_resources.csv`. The report compares process CPU and
+resident memory, retaining each component's available N values.
 
-The main report is `bridge_ignition_comparison.pdf`.
+The output PDF is `bridge_ignition_comparison.pdf`. The selected folders
+may represent separate experiments. Ignition statistics use all recorded
+resource samples for each N, including setup and warm-up if present.
 
-Each component retains its available N values. The selected folders
-may represent separate experiments.
+### Ignition enabled/disabled and cached/uncached comparisons
 
-### 4. Compare Ignition diagnostic cases
+Use `plotting/plot_timer_cached_comparisons.py` for two or more cases.
+Each `--case LABEL FOLDER` supplies one experiment and its legend label.
+Despite the filename, it supports enabled/disabled comparisons too.
 
-`plotting/plot_timer_cached_comparisons.py` compares two or more
-Ignition experiments.
-
-Provide one `--case LABEL FOLDER` argument per experiment.
-Labels appear in the figure legends.
-
-The script supports:
-
-- Diagnostic collection enabled versus disabled.
-- Cached versus uncached diagnostic collection.
-- More than two cases together.
-- One or multiple device counts.
-
-#### Enabled versus disabled
-
-For the existing enabled and complete disabled datasets:
+For new enabled and disabled experiments:
 
 ```bash
 python plotting/plot_timer_cached_comparisons.py \
-    --case Enabled results/timer_enabled_case \
-    --case Disabled results/timer_disabled_complete \
+    --case Enabled results/timer_uncached \
+    --case Disabled results/diagnostics_disabled \
     --output-dir figures/timer_enabled_vs_disabled
 ```
 
-#### Cached versus uncached
+Here, Enabled means collection enabled without caching. To analyse the
+historical enabled/disabled datasets instead, use the input folders
+`results/timer_enabled_case` and `results/timer_disabled_complete`.
+Historical disabled runs may have had the entire Designer timer disabled;
+keep that distinction from the configurable runner's disabled mode.
 
-For new experiments produced by the test runner:
+For cached versus uncached experiments:
 
 ```bash
 python plotting/plot_timer_cached_comparisons.py \
@@ -1036,7 +540,24 @@ python plotting/plot_timer_cached_comparisons.py \
     --output-dir figures/timer_cached_vs_uncached
 ```
 
-For the existing N=900 experiments:
+Both enabled/disabled and cached/uncached comparisons support multiple N
+values. Omit `--devices` to analyse all available N values. To select
+several, use a complete command such as:
+
+```bash
+python plotting/plot_timer_cached_comparisons.py \
+    --case Uncached results/timer_uncached \
+    --case Cached results/timer_cached \
+    --devices 10 110 210 310 \
+    --window measured \
+    --output-dir figures/timer_selected_devices
+```
+
+Plots versus N retain each case's available counts. Detailed per-N plots
+are generated for counts shared by all selected cases. Additional
+`--case` arguments allow comparisons between three or more experiments.
+
+For the existing N=900 cached and uncached runs:
 
 ```bash
 python plotting/plot_timer_cached_comparisons.py \
@@ -1047,79 +568,66 @@ python plotting/plot_timer_cached_comparisons.py \
     --output-dir figures/timer_cached_vs_uncached_N900
 ```
 
-#### Compare multiple device counts
+Each case requires `ignition_resources.csv`. Tag diagnostics are optional;
+CPU and RAM comparisons work without them.
 
-Omit `--devices` to analyse all available device counts.
+#### Measurement windows
 
-To select several counts, add:
+- `--window all` is the default. It uses every recorded resource sample
+  for each N, including setup and warm-up if present.
+- `--window measured` reads `bridge_N<number>.csv` in each case folder.
+  The first cycle's end timestamp minus its duration defines the start;
+  the last cycle's timestamp defines the end. Samples outside that
+  interval are excluded. Bridge metrics are not plotted in this report.
 
-```bash
---devices 10 110 210 310
-```
-
-Plots versus N retain each case's available counts. Detailed per-N
-comparisons are generated only for counts shared by all selected cases.
-
-Each experiment folder must contain `ignition_resources.csv`.
-Tag diagnostics are optional; missing tag diagnostics do not prevent
-CPU and RAM comparisons.
-
-#### Select the measurement window
-
-The default is:
-
-```bash
---window all
-```
-
-This uses all recorded Ignition resource samples for each N.
-
-To exclude setup and warm-up, use:
-
-```bash
---window measured
-```
-
-This requires `bridge_N<number>.csv` in each experiment folder.
-Bridge timestamps define the measured period; bridge metrics are
-not included in the Ignition comparison plots.
+Use the same window policy for cases intended for comparison.
 
 #### Comparison outputs
 
-The output folder contains:
+The selected output folder contains `ignition_timer_comparison.pdf`,
+individual PNGs, `summary.csv` and `plot_settings.json`. Figures include:
 
-- `ignition_timer_comparison.pdf`
-- CPU and RAM plots versus N.
-- Mean CPU, P95 CPU and high-CPU sample comparisons.
-- Per-N CPU traces with identical main scales.
-- Per-N mean/P95 CPU bars and CPU distributions.
-- Per-N memory traces.
-- Available collection-time and tag-quality comparisons.
-- `summary.csv` and `plot_settings.json`.
+- CPU and memory versus N, with median and P5–P95 bands.
+- Mean CPU, P95 CPU and percentage of samples above the CPU threshold.
+- Per-N CPU traces with identical main scales and labelled zooms.
+- Per-N mean/P95 bars, CPU distributions and memory traces.
+- Diagnostic collection-time and tag-quality comparisons when available.
 
-### Output options and interpretation
+### Plot options and scope
 
-Add `--no-images` to any plotting command to save PDFs and tables
-without individual PNG figures.
+All four plotting scripts accept `--output-dir`, `--devices`, `--no-images`
+and `--help`. `--no-images` keeps the PDFs and tables without individual
+PNGs. To change the high-CPU threshold in Ignition reports or timer-case
+comparisons, use `--spike-threshold`; the default is 50% process CPU.
 
-Use `--help` with any script to see its options.
+Plots are saved under `figures/` by default. Rerunning into the same
+output folder overwrites generated files with matching names; measurements
+are never modified. Changing plotting options may leave older, differently
+named figures in that folder.
 
-- CPU usage of 100% corresponds to one logical CPU.
-- RAM is process resident memory, not JVM heap usage.
-- P5–P95 bands show variability across samples, not confidence intervals.
-- High-CPU percentages count samples exceeding the threshold,
-  not distinct peak events.
-- Periodic tag snapshots do not establish continuous availability
-  or data freshness.
-
-Keep the plotting scripts together in `plotting/`, because they reuse
-shared loading and plotting functions.
+These four plotters do not analyse the per-operation thread timings in
+`ignition_timer_profile.csv` or the per-host emulator-resource CSVs.
+Those measurements remain available for separate profiling analysis.
 
 ## Interpreting measurements
 
-- Process CPU usage of 100% corresponds to one logical CPU.
-- RAM measurements are process resident memory.
-- P5–P95 bands describe variability across samples.
-- ZeroMQ payload throughput excludes network protocol overhead.
-- Good tag quality alone does not establish data freshness.
-- Diagnostic monitoring adds overhead to the Gateway.
+- Process CPU usage of 100% corresponds to one logical CPU. Summed emulator
+  CPU can exceed 100% when several processes run concurrently.
+- RAM is resident process memory. It is not JVM heap usage, and summed
+  emulator RSS may count shared pages more than once.
+- P5–P95 bands describe sample variability, not confidence intervals.
+- Request P95/P99 values are per-cycle statistics; medians of them are not
+  whole-run request percentiles.
+- ZeroMQ payload throughput excludes transport and network overhead.
+- Internal OPC UA writes do not establish delivery to an Ignition client.
+- Connected status and good tag quality alone do not prove data freshness.
+- Tag-quality snapshots are periodic; they do not establish continuous
+  availability between samples.
+- High-CPU percentages count threshold-exceeding samples, not distinct
+  peak events. Slow-cycle percentages count individual qualifying cycles.
+- Cached completeness counts describe the initial path check, whereas
+  quality and connection are sampled during recurring collection.
+- Timer-thread CPU time measures CPU used by that diagnostic thread.
+  Gateway process CPU also includes other JVM threads and work.
+- Diagnostic collection adds overhead to Ignition. Interpret resource
+  comparisons using the documented mode, sample window and run history.
