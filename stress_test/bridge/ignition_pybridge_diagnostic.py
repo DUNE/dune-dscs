@@ -21,6 +21,7 @@ from opcua import Server, ua
 ROOT = Path(__file__).resolve().parents[1]
 ENDPOINT = "opc.tcp://0.0.0.0:4840/freeopcua/server/"
 CONTROL_FILE = ROOT / "ignition_test_control.json"
+STATUS_FILE = ROOT / ".runtime" / "ignition_status.json"
 REQUEST_TIMEOUT_MS = 10_000
 CYCLE_DELAY_S = 1
 
@@ -219,15 +220,42 @@ def percentile(sorted_values, percent):
     )
 
 
-def update_ignition_control(number, run_id, active):
+def update_ignition_control(number, run_id, active, settings=None):
     """Atomically update the control file read by Ignition."""
     temporary = CONTROL_FILE.with_suffix(".tmp")
-    temporary.write_text(json.dumps({
+    control = {
         "N": number,
         "run_id": run_id,
         "active": active,
-    }))
+    }
+    if settings is not None:
+        control.update(settings)
+    temporary.write_text(json.dumps(control))
     os.replace(temporary, CONTROL_FILE)
+
+
+def wait_for_ignition(run_id, timeout):
+    """Wait for this run's tags to be configured and report Good quality."""
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        try:
+            status = json.loads(STATUS_FILE.read_text())
+        except (OSError, ValueError):
+            status = {}
+
+        if status.get("run_id") == run_id:
+            if status.get("error"):
+                raise RuntimeError(status["error"])
+            if status.get("ready"):
+                return
+
+        time.sleep(0.2)
+
+    raise TimeoutError(
+        "Ignition tags did not become ready. Check the Gateway timer, "
+        "OPC UA connection and trial/licence."
+    )
 
 
 def parse_arguments():
@@ -249,6 +277,22 @@ def parse_arguments():
         "--output-dir", type=Path, default=ROOT / "results",
         help="CSV directory (default: stress_test/results).",
     )
+    parser.add_argument(
+        "--timer-enabled", choices=("true", "false"), default="true",
+        help="Enable recurring Gateway diagnostic collection.",
+    )
+    parser.add_argument(
+        "--cache-enabled", choices=("true", "false"), default="true",
+        help="Reuse Gateway tag paths instead of browsing every tick.",
+    )
+    parser.add_argument(
+        "--wait-for-ignition", action="store_true",
+        help="Wait for Gateway tag setup before starting warm-up.",
+    )
+    parser.add_argument(
+        "--setup-timeout", type=float, default=60,
+        help="Gateway setup timeout in seconds (default: 60).",
+    )
     args = parser.parse_args()
 
     if args.cycles < 1:
@@ -257,6 +301,8 @@ def parse_arguments():
         parser.error("--devices must be between 1 and 1000")
     if not math.isfinite(args.warmup) or args.warmup < 0:
         parser.error("--warmup must be finite and nonnegative")
+    if not math.isfinite(args.setup_timeout) or args.setup_timeout <= 0:
+        parser.error("--setup-timeout must be finite and positive")
 
     return args
 
@@ -264,7 +310,13 @@ def parse_arguments():
 def main():
     """Set up the bridge, poll devices and save measured cycles."""
     args = parse_arguments()
+    args.output_dir = args.output_dir.resolve()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    settings = {
+        "output_dir": str(args.output_dir),
+        "timer_enabled": args.timer_enabled == "true",
+        "cache_enabled": args.cache_enabled == "true",
+    }
 
     # Load local modules after locating the shared Protobuf module.
     sys.path.insert(0, str(ROOT))
@@ -318,7 +370,11 @@ def main():
                 server.start()
                 server_started = True
                 print(f"Server started at {server.endpoint}")
-                update_ignition_control(args.devices, run_id, True)
+                update_ignition_control(
+                    args.devices, run_id, True, settings
+                )
+                if args.wait_for_ignition:
+                    wait_for_ignition(run_id, args.setup_timeout)
 
                 writer = csv.writer(csv_file)
                 writer.writerow(CSV_COLUMNS)
@@ -428,7 +484,9 @@ def main():
             finally:
                 if server_started:
                     try:
-                        update_ignition_control(args.devices, run_id, False)
+                        update_ignition_control(
+                            args.devices, run_id, False, settings
+                        )
                     finally:
                         server.stop()
                         print("Server stopped")

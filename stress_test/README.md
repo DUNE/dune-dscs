@@ -415,6 +415,213 @@ The runner supports resuming tests. Its completion check uses the
 corresponding bridge CSV, so an existing completed CSV can cause a
 device count to be skipped.
 
+
+## Ignition stress test
+
+`diagnostics/run_ignition_tests.sh` runs the bridge for several device
+counts while measuring the Ignition Gateway's CPU usage and RAM.
+
+Run it on the computer hosting the Ignition Gateway. In the Mainz
+setup, this is Weber09.
+
+### Gateway preparation
+
+Install the function from:
+
+```text
+ignition_monitoring_scripts/ignition_tag_diagnostics_configurable.py
+```
+
+In Ignition Designer:
+
+1. Open the stress-test project.
+2. Expand **Scripting → Gateway Events → Timer**.
+3. Create or open `BridgeStressMonitor`.
+4. Replace its function with the complete `handleTimerEvent()` function
+   from the configurable script.
+5. Use these settings:
+
+   | Property | Value |
+   |---|---|
+   | Delay | `5000` ms |
+   | Delay Type | `Fixed Delay` |
+   | Threading | `Dedicated` |
+   | Enabled | Checked |
+
+6. Save the project.
+
+Use one diagnostic timer. The configurable script replaces the
+separate cached and uncached versions for these tests.
+
+Keep the Gateway timer enabled in Designer for every automated mode.
+The runner controls whether it performs recurring diagnostic collection.
+
+Before testing, confirm:
+
+- The Ignition trial or licence is active.
+- The OPC UA connection name matches `OPC_SERVER` in the Gateway script.
+- The emulator hosts and ordering match the bridge configuration.
+- Enough emulators are running for the selected device counts.
+
+### Default settings
+
+| Setting | Default |
+|---|---|
+| Device counts | `10 110 210 310 410 510 610 710 810 900` |
+| Measured cycles per device count | `300` |
+| Warm-up | `30` seconds |
+| `TIMER_ENABLED` | `true` |
+| `CACHE_ENABLED` | `true` |
+| Results folder | `results/timer_cached/` |
+
+Edit `DEVICE_COUNTS` near the top of `run_ignition_tests.sh` to change
+the tested loads. The other settings below can be supplied as
+environment variables.
+
+### Run the default case
+
+```bash
+source ~/DSCS/opcua-env/bin/activate
+cd ~/dune-dscs/stress_test
+
+bash diagnostics/run_ignition_tests.sh
+```
+
+This enables diagnostic collection with cached tag paths.
+
+### Case 1 — Diagnostic collection disabled
+
+```bash
+TIMER_ENABLED=false \
+bash diagnostics/run_ignition_tests.sh
+```
+
+Results are saved under:
+
+```text
+results/diagnostics_disabled/
+```
+
+Ignition configures the expected tags and checks their initial quality.
+Once ready, the timer skips recurring diagnostic collection.
+
+Caching is ignored in this mode.
+
+The Gateway timer still reads the control file every five seconds.
+This differs from unchecking **Enabled** in Designer, which stops the
+timer entirely.
+
+### Case 2 — Diagnostic collection enabled, without caching
+
+```bash
+TIMER_ENABLED=true CACHE_ENABLED=false \
+bash diagnostics/run_ignition_tests.sh
+```
+
+Results are saved under:
+
+```text
+results/timer_uncached/
+```
+
+The Gateway rebuilds tag lists and browses tag paths on every diagnostic
+execution. Tags are created only when a new run starts.
+
+### Case 3 — Diagnostic collection enabled, with caching
+
+```bash
+TIMER_ENABLED=true CACHE_ENABLED=true \
+bash diagnostics/run_ignition_tests.sh
+```
+
+Results are saved under:
+
+```text
+results/timer_cached/
+```
+
+The Gateway builds and validates tag paths once per run, then reuses
+them for subsequent reads. It checks completeness again when the run
+ends.
+
+In this mode, CSV completeness counts come from the initial check.
+Quality and connection state are sampled during recurring collection.
+
+### Change cycles and warm-up
+
+For example, run the cached case with ten measured cycles and
+five seconds of warm-up:
+
+```bash
+TIMER_ENABLED=true CACHE_ENABLED=true \
+CYCLES=10 WARMUP=5 \
+RESULTS_DIR=results/cached_validation \
+bash diagnostics/run_ignition_tests.sh
+```
+
+Warm-up is measured in seconds.
+
+### Repeat an experiment
+
+Choose a new folder to retain the previous measurements:
+
+```bash
+TIMER_ENABLED=true CACHE_ENABLED=true \
+RESULTS_DIR=results/timer_cached_repeat \
+bash diagnostics/run_ignition_tests.sh
+```
+
+Relative results paths are resolved from the `stress_test` root.
+
+The selected output directory is passed to the bridge and the Gateway
+script automatically.
+
+### What happens during each device-count test
+
+1. The runner checks for completed or unfinished measurements.
+2. The Python monitor starts measuring the local Ignition Java process.
+3. The bridge starts and publishes the device count and test settings.
+4. Ignition creates the expected tags.
+5. The bridge waits for Good tag quality and a connected OPC UA state.
+6. The bridge performs warm-up, followed by the measured polling cycles.
+7. The runner stops the resource monitor and verifies the outputs.
+
+Gateway setup has a default timeout of 60 seconds.
+
+### Output files
+
+Each experiment folder contains:
+
+| File | Contents |
+|---|---|
+| `test_settings.json` | Device counts, cycles, warm-up and diagnostic mode. |
+| `bridge_N<number>.csv` | Bridge measurements for one device count. |
+| `ignition_resources.csv` | Gateway CPU and RAM samples across device counts. |
+| `ignition_tag_diagnostics.csv` | Tag quality, completeness and connection samples when collection is enabled. |
+| `ignition_timer_profile.csv` | Diagnostic operation timings when collection is enabled. |
+
+The resource monitor includes setup, warm-up and measured cycles.
+The bridge CSV includes only measured cycles.
+
+The shared control file remains at the `stress_test` root. Gateway
+readiness status and temporary monitor files are stored under
+`.runtime/`.
+
+### Resume an interrupted experiment
+
+Run the same command with the same settings and results folder.
+
+Completed device counts are skipped. For an unfinished device count,
+the runner removes its previous samples and repeats that configuration.
+
+A completed bridge CSV must have the expected cycles and associated
+Ignition resource samples. Enabled collection also requires Gateway
+diagnostic and profiling samples.
+
+If the folder's saved settings differ, the runner stops. Choose a new
+`RESULTS_DIR` for a different experiment.
+
+
 ## Results and plots
 
 Keep each completed test run in its own folder under `results/`.
