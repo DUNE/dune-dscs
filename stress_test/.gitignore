@@ -1,0 +1,50 @@
+# ==========================================
+# Python
+# ==========================================
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+opcua-env/
+
+# ==========================================
+# Logs and temporary files
+# ==========================================
+*.log
+*.err
+*.tmp
+*.bak
+*.before-indent-fix
+*.swp
+*.swo
+.ignition-monitor.*/
+
+# ==========================================
+# Generated test results
+# ==========================================
+*.csv
+*.pdf
+*.png
+
+# ==========================================
+# Generated output directories
+# ==========================================
+emulator_logs/
+combined_plots/
+ignition_plots/
+ignition_profile_plots/
+ignition_timer_plots/
+plots/
+plots_*/
+timer_cached_*/
+timer_original_*/
+timer_disabled_case/
+timer_enabled_case/
+timer_enabled_case_previous/
+trial_with_ignition_script/
+
+# ==========================================
+# Local test configuration
+# ==========================================
+ignition_test_control.json

@@ -15,7 +15,7 @@ import pandas as pd
 BASE = Path(__file__).resolve().parent
 OUTPUT = BASE / "combined_plots"
 OUTPUT.mkdir(exist_ok=True)
-
+å
 BRIDGE_COLOR = "#2563eb"
 IGNITION_COLOR = "#d97706"
 
