@@ -48,3 +48,5 @@ trial_with_ignition_script/
 # Local test configuration
 # ==========================================
 ignition_test_control.json
+
+/.runtime/
