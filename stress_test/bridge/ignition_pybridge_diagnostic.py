@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ENDPOINT = "opc.tcp://0.0.0.0:4840/freeopcua/server/"
 CONTROL_FILE = ROOT / "ignition_test_control.json"
 STATUS_FILE = ROOT / ".runtime" / "ignition_status.json"
-REQUEST_TIMEOUT_MS = 10_000
+REQUEST_TIMEOUT_MS = 1_000
+#REQUEST_TIMEOUT_MS = 10_000
 CYCLE_DELAY_S = 1
 
 # Ordering must match the device ordering in the Ignition diagnostic script.
