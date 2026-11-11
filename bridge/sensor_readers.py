@@ -105,6 +105,10 @@ class SNMPReader(BaseReader):
         """Return {sensor_name: value}."""
         return asyncio.run(self._read_async())
 
+    async def read_async(self):
+        # pysnmp is natively asyncio: await it directly instead of using a thread.
+        return await self._read_async()
+
     async def _read_async(self):
         # A fresh SnmpEngine is required per event loop - pysnmp's engine
         # binds to the loop it was created on, so reusing one across

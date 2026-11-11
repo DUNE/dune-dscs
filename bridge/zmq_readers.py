@@ -5,9 +5,11 @@ is wrapped, which fields to keep) comes from zmq_metrics.yaml, so new
 device types or messages only need a config change. See that file for the
 format.
 """
+import asyncio
 import importlib
 
 import zmq
+import zmq.asyncio
 from google.protobuf.any_pb2 import Any
 
 from base_reader import BaseReader
@@ -75,63 +77,101 @@ class ZMQReader(BaseReader):
         self.envelope = envelope
         self.messages = messages
         self.timeout_ms = timeout_ms
-        self._context = zmq.Context()
+        self.address = f"tcp://{host}:{port}"
+        self._context = None        # blocking context, created on first read()
+        self._async_context = None  # asyncio context, created on first read_async()
 
+    # ---------- shared encode / decode ----------
+    def _encode(self, spec):
+        req = spec["request"](**spec["request_args"])
+        if self.envelope is None:
+            return req.SerializeToString()
+        wrapped = self.envelope()
+        wrapped.cmd.Pack(req)
+        return wrapped.SerializeToString()
+
+    @staticmethod
+    def _decode(resp_bytes, spec):
+        resp = spec["response"]()
+        if spec["any_response"]:
+            resp_any = Any()
+            resp_any.ParseFromString(resp_bytes)
+            if not resp_any.Unpack(resp):
+                raise TypeError(f"reply is '{resp_any.type_url}', expected "
+                                f"'{resp.DESCRIPTOR.full_name}' (check response/any_response "
+                                f"in zmq_metrics.yaml)")
+        else:
+            resp.ParseFromString(resp_bytes)
+        return resp
+
+    @staticmethod
+    def _extract(resp, spec, values):
+        for name, fspec in spec["fields"].items():
+            if not hasattr(resp, name):
+                continue
+            cast = CASTS[fspec["type"]]
+            value = getattr(resp, name)
+            if isinstance(value, (int, float, str, bytes, bool)):
+                values[name] = cast(value)
+            else:  # repeated field
+                values[name] = [cast(v) for v in value]
+
+    def _timeout_msg(self, group):
+        # Device is not answering: don't wait a timeout for every group.
+        print(f" [!] {self.dev}: '{group}' timed out on {self.address}, skipping this poll")
+
+    def _error_msg(self, group, e):
+        print(f" [!] {self.dev}: error reading '{group}' on {self.address}: {e}")
+
+    # ---------- blocking API ----------
     def read(self):
+        if self._context is None:
+            self._context = zmq.Context()
         values = {}
         for group, spec in self.messages.items():
-            req = spec["request"](**spec["request_args"])
+            # A fresh REQ socket per request keeps a dead backend from
+            # leaving the socket stuck in the wrong REQ/REP state.
+            sock = self._context.socket(zmq.REQ)
             try:
-                resp = self._request(req, spec["response"], spec["any_response"])
+                sock.setsockopt(zmq.RCVTIMEO, self.timeout_ms)
+                sock.connect(self.address)
+                sock.send(self._encode(spec), flags=zmq.DONTWAIT)
+                self._extract(self._decode(sock.recv(), spec), spec, values)
             except zmq.error.Again:
-                # Device is not answering: don't wait a timeout for every group.
-                print(f" [!] {self.dev}: '{group}' timed out on {self.host}:{self.port}, skipping this poll")
+                self._timeout_msg(group)
                 break
             except Exception as e:
-                print(f" [!] {self.dev}: error reading '{group}' on {self.host}:{self.port}: {e}")
-                continue
-
-            for name, fspec in spec["fields"].items():
-                if not hasattr(resp, name):
-                    continue
-                cast = CASTS[fspec["type"]]
-                value = getattr(resp, name)
-                if isinstance(value, (int, float, str, bytes, bool)):
-                    values[name] = cast(value)
-                else:  # repeated field
-                    values[name] = [cast(v) for v in value]
+                self._error_msg(group, e)
+            finally:
+                sock.close(linger=0)
         return values
 
-    def _request(self, req_msg, resp_cls, any_response):
-        """One REQ/REP round trip. A fresh socket per call keeps a dead
-        backend from leaving the REQ socket stuck in the wrong state."""
-        sock = self._context.socket(zmq.REQ)
-        try:
-            sock.setsockopt(zmq.RCVTIMEO, self.timeout_ms)
-            sock.connect(f"tcp://{self.host}:{self.port}")
-
-            if self.envelope is not None:
-                wrapped = self.envelope()
-                wrapped.cmd.Pack(req_msg)
-                payload = wrapped.SerializeToString()
-            else:
-                payload = req_msg.SerializeToString()
-            sock.send(payload, flags=zmq.DONTWAIT)
-
-            resp_bytes = sock.recv()
-            resp = resp_cls()
-            if any_response:
-                resp_any = Any()
-                resp_any.ParseFromString(resp_bytes)
-                if not resp_any.Unpack(resp):
-                    raise TypeError(f"reply is '{resp_any.type_url}', expected "
-                                    f"'{resp.DESCRIPTOR.full_name}' (check response/any_response "
-                                    f"in zmq_metrics.yaml)")
-            else:
-                resp.ParseFromString(resp_bytes)
-            return resp
-        finally:
-            sock.close(linger=0)
+    # ---------- asyncio API ----------
+    async def read_async(self):
+        """Same as read(), but waits on the network without blocking the
+        event loop, so other devices are polled meanwhile. Groups of one
+        device are still sent one after another, as a real WIB expects."""
+        if self._async_context is None:
+            self._async_context = zmq.asyncio.Context()
+        values = {}
+        for group, spec in self.messages.items():
+            sock = self._async_context.socket(zmq.REQ)
+            try:
+                sock.connect(self.address)
+                await sock.send(self._encode(spec))
+                resp_bytes = await asyncio.wait_for(sock.recv(), self.timeout_ms / 1000)
+                self._extract(self._decode(resp_bytes, spec), spec, values)
+            except asyncio.TimeoutError:
+                self._timeout_msg(group)
+                break
+            except Exception as e:
+                self._error_msg(group, e)
+            finally:
+                sock.close(linger=0)
+        return values
 
     def close(self):
-        self._context.term()
+        for ctx in (self._context, self._async_context):
+            if ctx is not None:
+                ctx.term()
+        self._context = self._async_context = None

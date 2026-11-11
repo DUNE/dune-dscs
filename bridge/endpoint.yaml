@@ -10,12 +10,3 @@ ZMQ:
         host: localhost
         port: 5555
 
-      - tpc: 0
-        ID_n: 2
-        host: localhost
-        port: 5555
-
-      - tpc: 0
-        ID_n: 3
-        host: localhost
-        port: 5555

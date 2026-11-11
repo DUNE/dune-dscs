@@ -4,15 +4,30 @@ A reader only has to implement `read()`, returning {metric_name: value}.
 `value` is either a scalar or a list (one entry per array element).
 The bridge then pushes those values into OPC UA with `update_nodes()`,
 so the main loop never needs to know which protocol a device speaks.
+
+For concurrent polling the bridge awaits `read_async()`. By default it runs
+the blocking `read()` in a worker thread, so any reader works unchanged;
+readers whose library is natively async (ZMQ, SNMP) override it.
 """
+import asyncio
 
 
 class BaseReader:
     protocol = "BASE"
 
+    @property
+    def label(self):
+        """Short name for log messages."""
+        name = getattr(self, "dev", None) or getattr(self, "host", "?")
+        return f"{self.protocol}:{name}"
+
     def read(self):
         """Return {metric_name: value or [values]}; {} if nothing could be read."""
         raise NotImplementedError
+
+    async def read_async(self):
+        """Non-blocking read. Default: run `read()` in a thread."""
+        return await asyncio.to_thread(self.read)
 
     def close(self):
         """Release sockets/sessions. Optional for readers that hold none."""
