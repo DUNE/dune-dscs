@@ -13,6 +13,9 @@ Select one technology with `--kind wib`. Repeat `--kind` to select several.
 Use `--endpoint opc.tcp://127.0.0.1:4842/dune/` when running another instance.
 Each instance owns its configured device connections and polling tasks.
 
+Use the [measurement tools](measurements.md) for native query latency, timeouts,
+process resources and OPC UA read measurements.
+
 ## Configuration
 
 The [example](../examples/bridge.yaml) selects device addresses and measurements.
@@ -36,6 +39,9 @@ indices to select array entries.
 WIB and DAPHNE field names follow the bundled protobuf definitions. A read
 fetches each requested message group once. DAPHNE `info` readings from the
 current emulator are placeholders; the example uses threshold readback instead.
+For changing synthetic sensors and channel-0 counters, start the emulators
+with `--vary` and use `examples/bridge-varying.yaml`. See the
+[telemetry scope and hardware limits](emulator.md).
 
 ## Common OPC UA view
 

@@ -51,4 +51,7 @@
 .venv/
 __pycache__/
 *.pyc
+
+# Local bridge measurements
+runs/
 .pytest_cache/

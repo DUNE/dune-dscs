@@ -1,0 +1,9 @@
+{
+  "kind": "wib",
+  "basis": "Estimated fixed waits only; NOT a hardware measurement or upper bound. DUNE-DAQ/dune-wib-firmware ee0a4cd528f6e9a2fef90c205088173b149a91f2, sw/src/wib.cc read_sensors and sw/src/sensors.cc: 7*2*175ms + 8*2ms = 2466ms. Excludes I2C/syscall/network/queue time; source revision and board type must match before use.",
+  "delays_ms": {
+    "GetSensors": [
+      2466
+    ]
+  }
+}

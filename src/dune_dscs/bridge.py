@@ -18,6 +18,7 @@ from google.protobuf.message import DecodeError
 from pysnmp.hlapi.v3arch.asyncio import SnmpEngine
 
 from .bridge_clients import DAPHNE_READS, WIB_READS, BoardClient, PduClient
+from .metrics import BridgeMetrics
 
 LOG = logging.getLogger(__name__)
 NAMESPACE = "urn:dune:dscs:bridge"
@@ -33,6 +34,7 @@ class Variable:
     type: str = "Double"
     unit: str = ""
     values: dict = field(default_factory=dict)
+    scale: float = 1
 
     def convert(self, value):
         if self.values:
@@ -46,7 +48,9 @@ class Variable:
         elif self.type == "Double":
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ValueError("Double variable received a non-finite number or a different type")
-            value = float(value)
+            value = float(value) * self.scale
+            if not math.isfinite(value):
+                raise ValueError("scaled value is not finite")
         else:
             bits = 32 if self.type.endswith("32") else 64
             lower = 0 if self.type.startswith("U") else -(2 ** (bits - 1))
@@ -76,7 +80,7 @@ class Config:
 
 
 def load_config(path, kinds=None):
-    data = yaml.safe_load(Path(path).read_text())
+    data = yaml.load(Path(path).read_text(), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
     if not isinstance(data, dict):
         raise TypeError("configuration must be a mapping")
     devices = []
@@ -114,6 +118,9 @@ def validate(config):
         if not math.isfinite(device.period) or device.period <= 0 or not device.variables:
             raise ValueError(f"{device.id}: period must be positive; variables cannot be empty")
         for name, variable in device.variables.items():
+            if (isinstance(variable.scale, bool) or not isinstance(variable.scale, (int, float))
+                    or not math.isfinite(variable.scale) or variable.type != "Double" and variable.scale != 1):
+                raise ValueError(f"{device.id}.{name}: scale must be finite and is only supported for Double")
             if not NAME.fullmatch(name) or name in RESERVED or variable.type not in TYPES:
                 raise ValueError(f"{device.id}: invalid variable name or type: {name}")
             if device.kind == "pdu":
@@ -127,7 +134,7 @@ def validate(config):
 
 
 class Bridge:
-    def __init__(self, config):
+    def __init__(self, config, metrics_path=None, metrics_interval=5):
         validate(config)
         self.config = config
         self.server = Server()
@@ -136,6 +143,7 @@ class Bridge:
         self.context = None
         self.snmp = None
         self._started = False
+        self.metrics = BridgeMetrics(config.devices, metrics_path, metrics_interval) if metrics_path else None
 
     async def start(self):
         if self._started:
@@ -178,6 +186,8 @@ class Bridge:
                     self.snmp, self.config.timeout) if device.kind == "pdu" else BoardClient(
                         device.kind, device.endpoint, self.context)
             await self.server.start()
+            if self.metrics is not None:
+                await self.metrics.start()
             limiter = asyncio.Semaphore(self.config.concurrency)
             self.tasks = [asyncio.create_task(self._poll(device, limiter), name=f"poll:{device.id}")
                           for device in self.config.devices]
@@ -192,6 +202,8 @@ class Bridge:
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
         self.tasks.clear()
+        if self.metrics is not None:
+            await self.metrics.close()
         await asyncio.gather(*(client.close() for client in self.clients.values()))
         self.clients.clear()
         if self.snmp is not None:
@@ -211,18 +223,27 @@ class Bridge:
                   for name, variable in device.variables.items()}
         last_success, sequence = None, 0
         was_available = False
+        previous_start = None
         while True:
             started = asyncio.get_running_loop().time()
+            lateness = max(0, started - previous_start - device.period) if previous_start is not None else 0
+            previous_start = started
+            query_started, query_ms, error_object = started, 0, None
             try:
                 async with limiter:
-                    readings = await asyncio.wait_for(
-                        client.read([v.source for v in device.variables.values()]), self.config.timeout)
+                    query_started = asyncio.get_running_loop().time()
+                    try:
+                        readings = await asyncio.wait_for(
+                            client.read([v.source for v in device.variables.values()]), self.config.timeout)
+                    finally:
+                        query_ms = (asyncio.get_running_loop().time() - query_started) * 1000
                 converted = {name: variable.convert(readings[variable.source])
                              for name, variable in device.variables.items()}
                 last_success = datetime.now(timezone.utc)
                 values, sequence = converted, sequence + 1
                 code, error = ua.StatusCodes.Good, ""
             except Exception as exc:  # noqa: BLE001 - isolate failures to this device.
+                error_object = exc
                 code = ua.StatusCodes.BadDecodingError if isinstance(exc, (
                     ValueError, TypeError, LookupError, AttributeError, DecodeError)) else ua.StatusCodes.BadNoCommunication
                 error = f"{type(exc).__name__}: {exc}"[:300]
@@ -230,23 +251,33 @@ class Bridge:
             if available != was_available:
                 LOG.info("%s: %s", device.id, "available" if available else error)
             was_available = available
-            for name, variable in device.variables.items():
+            publish_started = asyncio.get_running_loop().time()
+            for index, (name, variable) in enumerate(device.variables.items()):
                 # Keep the last successful sample time when communication fails.
                 await nodes[name].write_value(ua.DataValue(
                     ua.Variant(values[name], TYPES[variable.type]),
                     StatusCode=ua.StatusCode(code), SourceTimestamp=last_success))
+                if index % 100 == 99:
+                    await asyncio.sleep(0)  # Large PDU maps must leave time for other devices.
             await nodes["Available"].write_value(available)
             await nodes["LastError"].write_value(error)
             if available:
                 await nodes["LastSuccess"].write_value(last_success)
                 await nodes["Sequence"].write_value(ua.Variant(sequence, ua.VariantType.UInt64))
-            elapsed = asyncio.get_running_loop().time() - started
+            finished = asyncio.get_running_loop().time()
+            elapsed = finished - started
+            if self.metrics is not None:
+                self.metrics.record(device, {
+                    "queue_ms": (query_started - started) * 1000, "query_ms": query_ms,
+                    "publish_ms": (finished - publish_started) * 1000,
+                    "total_ms": elapsed * 1000, "start_lateness_ms": lateness * 1000,
+                }, error_object)
             # One task per device prevents overlapping polls and unbounded queues.
             await asyncio.sleep(max(0.01, device.period - elapsed))
 
 
-async def run(config):
-    bridge = Bridge(config)
+async def run(config, metrics_path=None, metrics_interval=5):
+    bridge = Bridge(config, metrics_path, metrics_interval)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     loop.add_signal_handler(signal.SIGTERM, stop.set)
@@ -272,13 +303,15 @@ def main():
     parser.add_argument("config")
     parser.add_argument("--kind", action="append", choices=("wib", "daphne", "pdu"))
     parser.add_argument("--endpoint", help="override the OPC UA endpoint")
+    parser.add_argument("--metrics", help="write a live JSON metrics snapshot")
+    parser.add_argument("--metrics-interval", type=float, default=5, help="snapshot period in seconds")
     args = parser.parse_args()
     try:
         config = load_config(args.config, args.kind)
         if args.endpoint:
             config.endpoint = args.endpoint
         logging.basicConfig(level=logging.INFO)
-        asyncio.run(run(config))
+        asyncio.run(run(config, args.metrics, args.metrics_interval))
     except KeyboardInterrupt:
         pass
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
