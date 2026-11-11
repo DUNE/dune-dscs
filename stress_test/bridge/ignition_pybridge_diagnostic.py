@@ -31,7 +31,7 @@ EMULATOR_HOSTS = [
     (3, "134.93.131.35"),
     (6, "134.93.128.228"),
     (7, "134.93.128.229"),
-    (8, "134.93.128.234"),
+    #(8, "134.93.128.234"),
     (9, "134.93.128.243"),
     (10, "134.93.129.24"),
     (11, "134.93.129.16"),
@@ -297,14 +297,8 @@ def parse_arguments():
     )
     args = parser.parse_args()
 
-    if args.cycles < 1:
-        parser.error("--cycles must be at least 1")
-    if not 1 <= args.devices <= 1100:
-        parser.error("--devices must be between 1 and 1000")
-    if not math.isfinite(args.warmup) or args.warmup < 0:
-        parser.error("--warmup must be finite and nonnegative")
-    if not math.isfinite(args.setup_timeout) or args.setup_timeout <= 0:
-        parser.error("--setup-timeout must be finite and positive")
+    if args.cycles < 0:
+        parser.error("--cycles must be zero (unlimited) or positive")
 
     return args
 
@@ -388,7 +382,7 @@ def main():
                 warmup_started = time.perf_counter()
                 warming_up = args.warmup > 0
 
-                while count < args.cycles:
+                while args.cycles == 0 or count < args.cycles:
                     metrics = reset_metrics()
                     cycle_started = time.perf_counter()
                     time.sleep(CYCLE_DELAY_S)

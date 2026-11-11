@@ -456,10 +456,25 @@ the control file; it does not uncheck the Designer timer.
 
 ## Ignition test modes
 
-The runner starts the diagnostic bridge and the local resource monitor
-for each N. Its defaults are `TIMER_ENABLED=true` and `CACHE_ENABLED=true`.
+Run commands from the `stress_test` root on the Ignition Gateway host:
 
-| Collection | Caching | Default experiment folder |
+```bash
+source ~/DSCS/opcua-env/bin/activate
+cd ~/dune-dscs/stress_test
+```
+
+Keep the configurable Gateway timer enabled in Designer. The runner
+controls recurring diagnostic collection through the shared control file.
+
+The runner supports:
+
+- A finite sequence of device counts.
+- An endurance test at one fixed device count, without a cycle limit.
+
+Defaults are `ENDURANCE=false`, `TIMER_ENABLED=true` and
+`CACHE_ENABLED=true`.
+
+| Collection | Caching | Default finite-test folder |
 |---|---|---|
 | Disabled | Ignored | `results/diagnostics_disabled/` |
 | Enabled | Off | `results/timer_uncached/` |
@@ -472,10 +487,10 @@ TIMER_ENABLED=false \
 bash diagnostics/run_ignition_tests.sh
 ```
 
-Ignition still creates the expected tags and checks initial readiness.
+Ignition creates the expected tags and checks initial readiness.
 Once ready, the timer skips recurring collection but continues checking
-the control file periodically. This mode differs from disabling the
-entire timer in Designer.
+the control file periodically. This differs from disabling the entire
+timer in Designer.
 
 ### Enabled, uncached collection
 
@@ -494,7 +509,7 @@ TIMER_ENABLED=true CACHE_ENABLED=true \
 bash diagnostics/run_ignition_tests.sh
 ```
 
-This is also the default when running the script without overrides:
+This is also the default:
 
 ```bash
 bash diagnostics/run_ignition_tests.sh
@@ -505,7 +520,11 @@ Cached completeness counts come from the initial check; tag quality and
 connection state are sampled during recurring collection. An end-of-run
 path audit is written to the Gateway logger.
 
-### Custom experiment folder, cycles and warm-up
+### Finite tests: device counts, cycles and warm-up
+
+Edit `DEVICE_COUNTS` in the runner to select the finite test sequence.
+
+Override cycles, warm-up and output directory using environment variables:
 
 ```bash
 TIMER_ENABLED=true CACHE_ENABLED=false \
@@ -513,9 +532,12 @@ CYCLES=10 WARMUP=5 RESULTS_DIR=results/my_experiment \
 bash diagnostics/run_ignition_tests.sh
 ```
 
-The runner passes the selected output folder to both the bridge and
-Gateway script. All experiment measurements are saved there. Use a new
-folder for an independent repeat, for example:
+`CYCLES` counts measured polling cycles. `WARMUP` is measured in seconds.
+
+The runner passes the selected output folder to the bridge and Gateway
+script. Relative results paths are resolved from the `stress_test` root.
+
+Use a new folder for an independent repeat:
 
 ```bash
 TIMER_ENABLED=true CACHE_ENABLED=true \
@@ -523,38 +545,131 @@ RESULTS_DIR=results/timer_cached_repeat \
 bash diagnostics/run_ignition_tests.sh
 ```
 
+### Endurance test: run until stopped or a process fails
+
+Endurance mode runs one fixed load without a cycle limit:
+
+```bash
+ENDURANCE=true DEVICE_COUNT=1000 \
+TIMER_ENABLED=true CACHE_ENABLED=true \
+RESULTS_DIR=results/endurance_cached \
+bash diagnostics/run_ignition_tests.sh
+```
+
+Before using this mode, the diagnostic bridge must support
+`--cycles 0` as unlimited execution.
+
+| Setting | Endurance default |
+|---|---|
+| `DEVICE_COUNT` | `1000` |
+| `WARMUP` | `30` seconds |
+| `POST_FAILURE_SECONDS` | `60` seconds |
+| Cycle limit | None; the runner passes `--cycles 0` |
+| Automatic restart | Disabled |
+
+`DEVICE_COUNT` replaces the finite `DEVICE_COUNTS` sequence.
+`CYCLES` does not limit an endurance run. Confirm that enough emulators
+are running for the selected load.
+
+Collection and caching options work in endurance mode too. For example:
+
+```bash
+ENDURANCE=true DEVICE_COUNT=1000 \
+TIMER_ENABLED=true CACHE_ENABLED=false \
+RESULTS_DIR=results/endurance_uncached \
+bash diagnostics/run_ignition_tests.sh
+```
+
+If `RESULTS_DIR` is omitted, endurance folders default to:
+
+- `results/endurance_diagnostics_disabled/`
+- `results/endurance_timer_uncached/`
+- `results/endurance_timer_cached/`
+
+Always use a fresh folder for another endurance attempt. Existing
+measurements and experiment settings are protected from overwriting.
+
+#### Error recording and failure behaviour
+
+Request timeouts and other request errors are counted in the bridge CSV.
+Individual request errors do not automatically stop the test.
+
+`experiment.log` records bridge output, exceptions, process exits and
+timestamped runner events.
+
+If the bridge exits, the runner preserves its partial CSV and continues
+Ignition resource monitoring for `POST_FAILURE_SECONDS`, provided that
+monitor remains available.
+
+If the resource monitor exits while the bridge is running, the runner
+stops the bridge and preserves the measurements. Processes are not
+automatically restarted.
+
+The post-failure period monitors Gateway process resources. It does not
+guarantee continued Gateway tag diagnostics after the bridge ends its
+active run.
+
+A running process can also become unresponsive without exiting.
+Endurance mode does not automatically detect every stalled cycle or
+sustained communication failure; inspect timestamps and error counts.
+
+#### Watch and stop the test
+
+From another terminal:
+
+```bash
+tail -f ~/dune-dscs/stress_test/results/endurance_cached/experiment.log
+```
+
+Press Ctrl+C in the runner terminal to stop the test cleanly.
+Measurements are retained. Ctrl+C in the `tail` terminal only stops
+watching the log.
+
+Keep the runner terminal connected, or run it inside a persistent
+terminal session such as `tmux` if available.
+
 ### Sequence and output files
 
-For each N, the runner starts resource monitoring, starts the bridge,
-waits for Good tag quality and a connected OPC UA state, performs warm-up,
-and then records the requested measured cycles. Gateway setup defaults
-to a 60-second readiness timeout.
+The runner starts resource monitoring and the bridge, waits for Good tag
+quality and a connected OPC UA state, then performs warm-up before
+recording measured cycles. Gateway readiness defaults to a 60-second
+timeout.
 
 | File in the selected experiment folder | Contents |
 |---|---|
-| `test_settings.json` | Device counts, cycles, warm-up and diagnostic mode. |
+| `test_settings.json` | Device count settings, warm-up and diagnostic mode; endurance settings when applicable. |
 | `bridge_N<number>.csv` | Bridge measurements for N. |
-| `ignition_resources.csv` | Gateway process CPU and RAM across device counts. |
+| `ignition_resources.csv` | Gateway process CPU and resident memory. |
 | `ignition_tag_diagnostics.csv` | Periodic tag and connection diagnostics when collection is enabled. |
 | `ignition_timer_profile.csv` | Per-operation elapsed and timer-thread CPU time when collection is enabled. |
+| `experiment.log` | Terminal output, errors and runner events in endurance mode. |
 
-Gateway process resources are measured by `diagnostics/monitor_ignition.py`,
-not by the bridge or the Gateway timer. These samples include setup,
-warm-up and measured cycles. Bridge CSVs contain measured cycles only.
+Gateway process resources are measured by
+`diagnostics/monitor_ignition.py`, not by the bridge or Gateway timer.
+These samples include setup, warm-up and measured cycles. In endurance
+mode, they may also include the post-failure period.
+
+Bridge CSVs contain measured cycles only.
 
 The control file stays at the `stress_test` root. Readiness status,
 monitor markers and locks are stored under `.runtime/`.
 
-### Resume an interrupted experiment
+### Resume an interrupted finite experiment
 
-Rerun the same command with the same settings and `RESULTS_DIR`.
+For finite tests, rerun the same command with the same settings and
+`RESULTS_DIR`.
+
 Completed configurations are skipped. An unfinished N has its previous
-samples removed and is repeated.
+samples removed and is repeated. A failed finite run may have its
+unfinished bridge CSV removed during cleanup.
 
 Completion requires the expected bridge cycles and associated resource
 samples. Enabled collection also requires tag-diagnostic and profiling
-samples. A mismatch with saved experiment settings stops the runner;
-choose a new folder for different settings.
+samples. A mismatch with saved experiment settings stops the runner.
+
+Endurance tests do not use this resume behaviour. Their partial
+measurements are preserved as failure evidence; start a new attempt
+in a fresh results folder.
 
 ## Plotting results
 

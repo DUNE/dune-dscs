@@ -5,15 +5,15 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 # Set these options here or provide their values as environment variables.
 PYTHON="${PYTHON:-$HOME/DSCS/opcua-env/bin/python}"
-DEVICE_COUNTS=(10 110 210 310 410 510 610 710 810 910 1010 1100)
+DEVICE_COUNTS=(10 110 210 310 410 510 610 710 810 910 1000)
 CYCLES="${CYCLES:-300}"
 WARMUP="${WARMUP:-30}"  # Seconds.
 TIMER_ENABLED="${TIMER_ENABLED:-true}"
 CACHE_ENABLED="${CACHE_ENABLED:-true}"
 
-for value in "$TIMER_ENABLED" "$CACHE_ENABLED"; do
+for value in "$TIMER_ENABLED" "$CACHE_ENABLED" "${ENDURANCE:-false}"; do
     if [[ "$value" != "true" && "$value" != "false" ]]; then
-        echo "TIMER_ENABLED and CACHE_ENABLED must be true or false." >&2
+        echo "TIMER_ENABLED, CACHE_ENABLED and ENDURANCE must be true or false." >&2
         exit 1
     fi
 done
@@ -27,6 +27,9 @@ else
     CASE_NAME="timer_uncached"
 fi
 
+if [[ "${ENDURANCE:-false}" == "true" ]]; then
+    CASE_NAME="endurance_$CASE_NAME"
+fi
 RESULTS_DIR="${RESULTS_DIR:-$PWD/results/$CASE_NAME}"
 
 MONITOR="$PWD/diagnostics/monitor_ignition.py"
@@ -45,6 +48,153 @@ LOCK
 then
     echo "Another Ignition test runner is already active." >&2
     exit 1
+fi
+
+# An endurance run is a fresh experiment: never resume or delete its evidence.
+if [[ "${ENDURANCE:-false}" == "true" ]]; then
+    "$PYTHON" - "$PYTHON" "$PWD" "$RESULTS_DIR" \
+        "${DEVICE_COUNT:-1000}" "$WARMUP" "$TIMER_ENABLED" \
+        "$CACHE_ENABLED" "${POST_FAILURE_SECONDS:-60}" <<'ENDURANCE'
+import json
+import math
+import os
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import traceback
+from datetime import datetime, timezone
+from pathlib import Path
+
+python, root, folder, number, warmup, timer, cache, post = sys.argv[1:]
+root, folder = Path(root), Path(folder).resolve()
+number, warmup, post = int(number), float(warmup), float(post)
+if not 1 <= number <= 1000:
+    raise SystemExit("DEVICE_COUNT must be between 1 and 1000.")
+if any(not math.isfinite(value) or value < 0 for value in (warmup, post)):
+    raise SystemExit("WARMUP and POST_FAILURE_SECONDS must be nonnegative.")
+if any(folder.glob("*.csv")) or any(folder.glob("*.log")):
+    raise SystemExit(
+        "Choose a fresh RESULTS_DIR; endurance data is preserved."
+    )
+settings = {
+    "mode": "endurance", "device_counts": [number], "cycles": 0,
+    "warmup_seconds": warmup, "timer_enabled": timer == "true",
+    "cache_enabled": cache == "true", "post_failure_seconds": post,
+    "automatic_restart": False,
+}
+settings_file = folder / "test_settings.json"
+if settings_file.exists():
+    raise SystemExit("Choose a new RESULTS_DIR for this endurance attempt.")
+settings_file.write_text(json.dumps(settings, indent=2) + "\n")
+
+
+def interrupted(signum, frame):
+    raise KeyboardInterrupt
+
+
+signal.signal(signal.SIGTERM, interrupted)
+started = time.monotonic()
+monitor = bridge = None
+status = 1
+with (folder / "experiment.log").open("x", buffering=1) as log:
+    def event(message):
+        elapsed = time.monotonic() - started
+        line = "%s | %.1f s | %s" % (
+            datetime.now(timezone.utc).isoformat(), elapsed, message,
+        )
+        print(line, flush=True)
+        print(line, file=log, flush=True)
+
+    def stop(process):
+        if process is None or process.poll() is not None:
+            return
+        process.send_signal(signal.SIGINT)
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            event("Process %d did not stop; sending SIGTERM" % process.pid)
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                event("Process %d did not stop; sending SIGKILL" % process.pid)
+                process.kill()
+                process.wait()
+
+    with tempfile.TemporaryDirectory(
+        dir=root / ".runtime", prefix="endurance-monitor.",
+    ) as temporary, (folder / "ignition_resources.csv").open("x") as resources:
+        control = Path(temporary)
+        try:
+            env = dict(os.environ, WRITE_HEADER="1", PYTHONUNBUFFERED="1")
+            event("Starting endurance test: N=%d, controller PID=%d"
+                  % (number, os.getpid()))
+            monitor = subprocess.Popen([
+                python, "-u", str(root / "diagnostics/monitor_ignition.py"),
+                str(number), str(control / "stop"), str(control / "ready"),
+            ], stdout=resources, stderr=log, env=env)
+            deadline = time.monotonic() + 30
+            while not (control / "ready").exists():
+                if monitor.poll() is not None:
+                    raise RuntimeError(
+                        "Ignition resource monitor failed at startup"
+                    )
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        "Ignition monitor was not ready within 30 s"
+                    )
+                time.sleep(0.2)
+            bridge = subprocess.Popen([
+                python, "-u",
+                str(root / "bridge/ignition_pybridge_diagnostic.py"),
+                "--devices", str(number), "--cycles", "0",
+                "--warmup", str(warmup), "--output-dir", str(folder),
+                "--timer-enabled", timer, "--cache-enabled", cache,
+                "--wait-for-ignition",
+            ], stdout=log, stderr=subprocess.STDOUT, env=env)
+            event("Bridge PID=%d; output is in experiment.log" % bridge.pid)
+            while bridge.poll() is None:
+                if monitor.poll() is not None:
+                    raise RuntimeError(
+                        "Ignition monitor exited with code %s; stopping test"
+                        % monitor.returncode
+                    )
+                time.sleep(0.5)
+            event("Bridge exited with code %s" % bridge.returncode)
+            status = bridge.returncode if bridge.returncode > 0 else 1
+            event("Keeping Ignition resource monitoring for %.1f s" % post)
+            deadline = time.monotonic() + post
+            while time.monotonic() < deadline:
+                if monitor.poll() is not None:
+                    event(
+                        "Ignition monitor also exited: %s" % monitor.returncode
+                    )
+                    break
+                time.sleep(min(0.5, max(0, deadline - time.monotonic())))
+        except KeyboardInterrupt:
+            event("Manual stop requested")
+            status = 130
+        except Exception as error:
+            event("Test failed: %s" % error)
+            traceback.print_exc(file=log)
+            status = 1
+        finally:
+            stop(bridge)
+            (control / "stop").touch()
+            if monitor is not None:
+                try:
+                    monitor.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    stop(monitor)
+            event(
+                "Stopped; all CSVs and error output preserved; exit=%d"
+                % status
+            )
+raise SystemExit(status)
+ENDURANCE
+    exit $?
 fi
 
 # Preserve the settings with the experiment and reject mixed configurations.

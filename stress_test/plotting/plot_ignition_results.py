@@ -99,8 +99,7 @@ def add_statistics(row, prefix, values):
     }.items():
         row[f"{prefix}_{name}"] = value
 
-
-def load_case(folder, args):
+def load_case(folder, args, windows=None):
     resources = read_csv(
         folder / "ignition_resources.csv", ["N", *METRICS],
     )
