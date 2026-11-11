@@ -1,9 +1,7 @@
-name: Lint
+name: Python checks
 
 on:
   pull_request:
-    branches:
-      - develop
   push:
     branches:
       - develop
@@ -26,4 +24,7 @@ jobs:
 
       - name: Run ruff
         run: |
-          uv run ruff check src --extend-exclude '*_pb2.py'
+          uv run ruff check src tests --extend-exclude '*_pb2.py'
+
+      - name: Run unit tests
+        run: uv run python -m unittest discover -s tests -v
