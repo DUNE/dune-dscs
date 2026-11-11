@@ -9,7 +9,8 @@ from .protocols._generated import daphneV3_high_level_confs_pb2 as pb
 
 
 class Daphne:
-    def __init__(self):
+    def __init__(self, telemetry=None):
+        self.telemetry = telemetry
         self.sequence = itertools.count(1)
         self.thresholds = [0] * 40
         self.config = pb.ConfigureRequest()
@@ -58,11 +59,23 @@ class Daphne:
             response = pb.ReadTriggerCountersResponse(success=True, message="OK")
             for channel in request.channels or range(40):
                 if 0 <= channel < 40:
-                    response.snapshots.add(channel=channel, threshold=self.thresholds[channel])
+                    snapshot = response.snapshots.add(channel=channel, threshold=self.thresholds[channel])
+                    if self.telemetry is not None:
+                        snapshot.record_count = self.telemetry.counter(100 + channel + self.telemetry.seed % 100)
+                        snapshot.busy_count = self.telemetry.counter(1 + channel % 5)
+                        snapshot.full_count = self.telemetry.counter(.1)
             return response
         if message_type == pb.MT2_READ_TEST_REG_REQ:
             return pb.TestRegResponse(value=0xDEADBEEF, message="ok")
         if message_type == pb.MT2_READ_GENERAL_INFO_REQ:
+            if self.telemetry is not None:
+                # Synthetic ADC readings; there is no calibrated DAC-to-voltage model.
+                values = {f"v_bias_{i}": self.telemetry.analog(50, .1, i) for i in range(5)}
+                values.update(power_minus5v=self.telemetry.analog(-5, .02, 5),
+                              power_plus2p5v=self.telemetry.analog(3.3, .02, 6),
+                              power_ce=self.telemetry.analog(1.8, .01, 7),
+                              temperature=self.telemetry.analog(28, .5, 8))
+                return pb.GeneralInfo(**values)
             # Default fields are placeholders, not measured board telemetry.
             return pb.GeneralInfo()
         return None

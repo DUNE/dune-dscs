@@ -6,7 +6,8 @@ from .protocols._generated import wib_pb2 as pb
 
 
 class Wib:
-    def __init__(self):
+    def __init__(self, telemetry=None):
+        self.telemetry = telemetry
         self.femb_power = [False] * 4
         self.configuration_generation = 0
         self.sensors = {}
@@ -200,6 +201,15 @@ def _sensor_reply(model: Wib) -> Message:
     sensors.ad7414_4d_temp = model.sensors.get("ad7414_4d_temp", 29.0)
     sensors.ad7414_4a_temp = model.sensors.get("ad7414_4a_temp", 30.0)
     sensors.ltc2499_15_temps.extend([model.sensors.get(f"temperature_{index}", 27.0) for index in range(7)])
+    if model.telemetry is not None:
+        for index, name in enumerate(("ad7414_49_temp", "ad7414_4d_temp", "ad7414_4a_temp")):
+            setattr(sensors, name, model.telemetry.analog(getattr(sensors, name), .5, index))
+        for index, value in enumerate(sensors.ltc2499_15_temps):
+            sensors.ltc2499_15_temps[index] = model.telemetry.analog(value, .5, index + 3)
+        for group, name in enumerate(("ltc2990_4e_voltages", "ltc2990_4c_voltages", "ltc2991_48_voltages")):
+            readings = getattr(sensors, name)
+            for index, value in enumerate(readings):
+                readings[index] = model.telemetry.analog(value, abs(value)*.005, 20+group*8+index)
     for field_name in (
         "femb0_dc2dc_ltc2991_voltages",
         "femb1_dc2dc_ltc2991_voltages",

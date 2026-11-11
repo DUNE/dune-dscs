@@ -1,0 +1,27 @@
+{
+  "kind": "daphne",
+  "basis": "Measured on np04-onl-004 to np04-daphne-015 (10.73.137.16:40001), 2026-11-10; five samples per operation. First info sample includes connection setup. GeneralInfo can contain cached sensor values; acquisition freshness was not measured.",
+  "delays_ms": {
+    "MT2_READ_GENERAL_INFO_REQ": [
+      0.3514409763738513,
+      1.115242950618267,
+      1.0347419884055853,
+      0.21822203416377306,
+      1.055420027114451
+    ],
+    "MT2_READ_TRIGGER_COUNTERS_REQ": [
+      0.5526549648493528,
+      0.4678640980273485,
+      0.44927792623639107,
+      0.4940440412610769,
+      0.43601205106824636
+    ],
+    "MT2_READ_TEST_REG_REQ": [
+      0.2060650149360299,
+      0.20142900757491589,
+      0.22753106895834208,
+      0.23681495804339647,
+      0.23126101586967707
+    ]
+  }
+}

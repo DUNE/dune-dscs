@@ -1,9 +1,13 @@
 import asyncio
+import json
+import os
 import socket
+import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from asyncua import Client, ua
 from pysnmp.proto.api import v2c
@@ -19,6 +23,7 @@ from dune_dscs.bridge import (
 )
 from dune_dscs.emulator.__main__ import run as run_emulator
 from dune_dscs.emulator.pdu import SWITCH, PduAgent
+from dune_dscs.measure import measure
 
 
 def free_port(udp=False):
@@ -180,3 +185,54 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
             return value.StatusCode.value == ua.StatusCodes.BadDecodingError
         await eventually(decoded_bad)
         self.assertFalse(await self.node('pdu-1', 'Available').read_value())
+
+    async def test_metrics_and_probe_report_native_timeout_and_bad_quality(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'metrics.json'
+            self.bridge = Bridge(self.config, metrics_path=path, metrics_interval=0.05)
+            await self.bridge.start()
+            self.client = Client(self.config.endpoint)
+            await self.client.connect()
+            self.index = await self.client.get_namespace_index(NAMESPACE)
+            await eventually(self.all_available)
+            self.tasks[0].cancel()
+            await asyncio.gather(self.tasks[0], return_exceptions=True)
+
+            async def timeout_recorded():
+                return self.bridge.metrics.snapshot()['devices']['wib-1']['timeouts'] > 0
+            await eventually(timeout_recorded)
+            report = await measure(self.config, duration=0.15, workers=2, pids=[os.getpid()])
+            self.assertEqual(report['status'], 'completed')
+            self.assertGreater(report['counts']['successful_requests'], 0)
+            self.assertGreater(report['counts']['bad_values'], 0)
+            self.assertEqual(report['counts']['timeouts'], 0)  # OPC UA answered; native WIB timed out.
+            self.assertGreater(report['good_value_age_ms']['count'], 0)
+            self.assertEqual(report['resources'][str(os.getpid())]['history'][-1]['status'], 'running')
+            await self.client.disconnect()
+            self.client = None
+            await self.bridge.close()
+            snapshot = json.loads(path.read_text())
+            self.assertGreater(snapshot['by_kind']['wib']['timeouts'], 0)
+            self.assertGreater(snapshot['by_kind']['daphne']['successes'], 0)
+            self.assertEqual(snapshot['by_kind']['daphne']['failures'], 0)
+
+    async def test_probe_records_connection_failure(self):
+        self.config.endpoint = f'opc.tcp://127.0.0.1:{free_port()}/unavailable/'
+        report = await measure(self.config, duration=0.1, timeout=0.1)
+        self.assertEqual(report['status'], 'connection_failed')
+        self.assertIsNotNone(report['connect_error'])
+        self.assertEqual(report['counts']['requests'], 0)
+
+    async def test_probe_counts_read_timeouts_separately_from_connect(self):
+        await self.start_bridge()
+
+        async def slow_read(client, nodes):
+            await asyncio.sleep(1)
+
+        with patch.object(Client, 'read_attributes', slow_read):
+            report = await measure(self.config, duration=0.1, workers=2, timeout=0.05)
+        self.assertEqual(report['status'], 'completed')
+        self.assertEqual(report['connect_timeouts'], 0)
+        self.assertGreater(report['counts']['timeouts'], 0)
+        self.assertEqual(report['counts']['timeouts'], report['counts']['failed_requests'])
+        self.assertEqual(report['counts']['requests'], report['counts']['failed_requests'])
