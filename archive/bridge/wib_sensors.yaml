@@ -4,7 +4,7 @@
 #
 # The name must match a field name in the WIB protobuf messages (wib_pb2 -
 # GetSensors.Sensors, GetSWVersion.Version, GetTimestamp.Timestamp,
-# GetTimingStatus.TimingStatus, Peek) exactly, since update_node() reads it
+# GetTimingStatus.TimingStatus) exactly, since update_node() reads it
 # via getattr(response, name). The length is how many OPC UA variables get
 # created for that field (1 for a scalar field, N for a repeated/array field).
 #
@@ -49,6 +49,3 @@ timing_status:
   los_val: 1
   los_flg_val: 1
   ept_status: 1
-
-peek:
-  addr: 1

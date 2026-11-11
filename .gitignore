@@ -47,9 +47,11 @@
 *.bin
 *.db
 
-# python
+# Local Python environment and test output
+.venv/
 __pycache__/
 *.pyc
 
 # Local bridge measurements
 runs/
+.pytest_cache/
