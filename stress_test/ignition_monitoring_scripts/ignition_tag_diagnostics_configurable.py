@@ -79,7 +79,7 @@ def handleTimerEvent():
             "output_dir", os.path.join(BASE_DIR, "results")
         )
 
-        if not 1 <= device_count <= 1000:
+        if not 1 <= device_count <= 1100:
             raise ValueError("N must be between 1 and 1000")
         if not isinstance(timer_enabled, bool):
             raise ValueError("timer_enabled must be a JSON boolean")
@@ -139,7 +139,7 @@ def handleTimerEvent():
 
         # Match the device ordering in the bridge.
         if new_run or not cache_enabled:
-            hosts = [3, 6, 7, 2, 9, 10, 11, 12, 14]
+            hosts = [2, 3, 6, 7, 8, 9, 10, 11, 12, 13, 14]
             fields = [
                 ("Temperature", "Temp1", 0),
                 ("Voltage1", "vol1", 0),

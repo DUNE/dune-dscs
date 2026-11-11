@@ -27,14 +27,16 @@ CYCLE_DELAY_S = 1
 
 # Ordering must match the device ordering in the Ignition diagnostic script.
 EMULATOR_HOSTS = [
+    (2, "134.93.130.214"),
     (3, "134.93.131.35"),
     (6, "134.93.128.228"),
     (7, "134.93.128.229"),
-    (2, "134.93.130.214"),
+    (8, "134.93.128.234"),
     (9, "134.93.128.243"),
     (10, "134.93.129.24"),
     (11, "134.93.129.16"),
     (12, "134.93.131.161"),
+    (13, "134.93.129.22"),
     (14, "134.93.129.26"),
 ]
 
@@ -297,7 +299,7 @@ def parse_arguments():
 
     if args.cycles < 1:
         parser.error("--cycles must be at least 1")
-    if not 1 <= args.devices <= 1000:
+    if not 1 <= args.devices <= 1100:
         parser.error("--devices must be between 1 and 1000")
     if not math.isfinite(args.warmup) or args.warmup < 0:
         parser.error("--warmup must be finite and nonnegative")

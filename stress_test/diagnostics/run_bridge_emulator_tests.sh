@@ -14,14 +14,16 @@ MONITOR="$PWD/diagnostics/monitor_emulators.py"
 
 # Match the hosts used by the diagnostic bridge.
 HOSTS=(
+    "Weber02 134.93.130.214"
     "Weber03 134.93.131.35"
     "Weber06 134.93.128.228"
     "Weber07 134.93.128.229"
-    "Weber02 134.93.130.214"
+    "Weber08 134.93.128.234"
     "Weber09 134.93.128.243"
     "Weber10 134.93.129.24"
     "Weber11 134.93.129.16"
     "Weber12 134.93.131.161"
+    "Weber13 134.93.129.22"
     "Weber14 134.93.129.26"
 )
 

@@ -5,7 +5,7 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 # Set these options here or provide their values as environment variables.
 PYTHON="${PYTHON:-$HOME/DSCS/opcua-env/bin/python}"
-DEVICE_COUNTS=(10 110 210 310 410 510 610 710 810 900)
+DEVICE_COUNTS=(10 110 210 310 410 510 610 710 810 910 1010 1100)
 CYCLES="${CYCLES:-300}"
 WARMUP="${WARMUP:-30}"  # Seconds.
 TIMER_ENABLED="${TIMER_ENABLED:-true}"
@@ -65,7 +65,7 @@ if cycles < 1 or not math.isfinite(warmup) or warmup < 0:
     raise SystemExit("Require cycles >= 1 and finite warm-up >= 0.")
 if not devices or len(devices) != len(set(devices)):
     raise SystemExit("Supply a nonempty list of unique device counts.")
-if any(not 1 <= number <= 1000 for number in devices):
+if any(not 1 <= number <= 1100 for number in devices):
     raise SystemExit("Device counts must be between 1 and 1000.")
 
 settings = {
