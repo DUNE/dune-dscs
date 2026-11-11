@@ -1,6 +1,7 @@
 # dune-dscs
 
 Run the [PDU, DAPHNE and WIB emulators](emulator.md) with the existing Python environment.
+Use the [OPC UA bridge](bridge.md) for one technology or a mixed fleet.
 
 The dune-dscs repository is the top-level repository for the Detector Slow Controls System.
 Initially, it will contain code for bridges and emulators, but these may be refactored into other repositories in the future.
