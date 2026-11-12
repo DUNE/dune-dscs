@@ -8,8 +8,10 @@ import logging
 import math
 import os
 import sys
+import threading
 import time
 import uuid
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,7 +25,7 @@ ENDPOINT = "opc.tcp://0.0.0.0:4840/freeopcua/server/"
 CONTROL_FILE = ROOT / "ignition_test_control.json"
 STATUS_FILE = ROOT / ".runtime" / "ignition_status.json"
 REQUEST_TIMEOUT_MS = 1_000
-#REQUEST_TIMEOUT_MS = 10_000
+# REQUEST_TIMEOUT_MS = 10_000
 CYCLE_DELAY_S = 1
 
 # Ordering must match the device ordering in the Ignition diagnostic script.
@@ -32,7 +34,7 @@ EMULATOR_HOSTS = [
     (3, "134.93.131.35"),
     (6, "134.93.128.228"),
     (7, "134.93.128.229"),
-    #(8, "134.93.128.234"),
+    # (8, "134.93.128.234"),
     (9, "134.93.128.243"),
     (10, "134.93.129.24"),
     (11, "134.93.129.16"),
@@ -49,6 +51,96 @@ CSV_COLUMNS = [
     "node_writes", "node_writes_per_s", "parse_total_ms", "update_total_ms",
     "request_median_ms", "request_p95_ms", "request_p99_ms",
 ]
+
+
+class CpuProfiler:
+    """Record process CPU intervals and polling-loop phase transitions."""
+
+    def __init__(self, path, interval):
+        self.path = path
+        self.interval = interval
+        self.lock = threading.Lock()
+        self.stop = threading.Event()
+        self.ready = threading.Event()
+        self.error = None
+        self.cycle = 0
+        self.warmup = True
+        self.current_phase = None
+
+    def __enter__(self):
+        self.file = self.path.open("x", newline="")
+        self.writer = csv.writer(self.file)
+        self.writer.writerow([
+            "time_utc", "elapsed_s", "event", "cycle", "warmup",
+            "phase", "cpu_percent", "interval_s",
+        ])
+        self.origin = time.perf_counter()
+        self.thread = threading.Thread(target=self.sample_loop, daemon=True)
+        self.thread.start()
+        if not self.ready.wait(5):
+            self.__exit__(RuntimeError, None, None)
+            raise RuntimeError("CPU sampler did not start within five seconds")
+        if self.error is not None:
+            self.__exit__(RuntimeError, None, None)
+            self.check()
+        return self
+
+    def write(self, event, stamp=None, cpu="", interval=""):
+        """Write while holding the lock; samples have no phase attribution."""
+        stamp = time.perf_counter() if stamp is None else stamp
+        is_phase = event != "sample"
+        self.writer.writerow([
+            datetime.now(timezone.utc).isoformat(),
+            round(stamp - self.origin, 9), event,
+            self.cycle if is_phase else "",
+            int(self.warmup) if is_phase else "",
+            self.current_phase if is_phase else "", cpu, interval,
+        ])
+
+    def phase(self, name, cycle=None, warmup=None, event="phase"):
+        with self.lock:
+            if self.error is not None:
+                return
+            if cycle is not None:
+                self.cycle = cycle
+                self.warmup = warmup
+            if name == self.current_phase and event == "phase":
+                return
+            self.current_phase = name
+            try:
+                self.write(event)
+            except Exception as error:
+                self.error = error
+
+    def sample_loop(self):
+        try:
+            # Use an independent object; do not reset per-cycle CPU readings.
+            process = psutil.Process()
+            process.cpu_percent(None)
+            previous = time.perf_counter()
+            self.ready.set()
+            while not self.stop.wait(self.interval):
+                cpu = process.cpu_percent(None)
+                stamp = time.perf_counter()
+                with self.lock:
+                    self.write("sample", stamp, cpu, stamp - previous)
+                    self.file.flush()
+                previous = stamp
+        except Exception as error:
+            self.error = error
+            self.ready.set()
+
+    def check(self):
+        if self.error is not None:
+            raise RuntimeError(f"CPU profiling failed: {self.error}")
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.phase("stopped")
+        self.stop.set()
+        self.thread.join()
+        self.file.close()
+        if exc_type is None:
+            self.check()
 
 
 class MissingAttributeFilter(logging.Filter):
@@ -133,7 +225,7 @@ def update_node(response, nodes, metrics):
 
 def zmqd_request(
     context, device, metrics, request, response_class,
-    use_any_response=True,
+    use_any_response=True, cpu_profile=None,
 ):
     """Send an Any-wrapped request and measure the reply and parsing."""
     metrics["attempts"] += 1
@@ -161,6 +253,8 @@ def zmqd_request(
         request_ms = (time.perf_counter() - started) * 1000
         metrics["rx_bytes"] += len(response_bytes)
 
+        if cpu_profile:
+            cpu_profile.phase("parsing")
         stage = "parse"
         parse_started = time.perf_counter()
 
@@ -204,6 +298,8 @@ def zmqd_request(
         return None
 
     finally:
+        if cpu_profile:
+            cpu_profile.phase("request")
         request_socket.close(linger=0)
 
 
@@ -296,7 +392,19 @@ def parse_arguments():
         "--setup-timeout", type=float, default=60,
         help="Gateway setup timeout in seconds (default: 60).",
     )
+    parser.add_argument(
+        "--cpu-profile", action="store_true",
+        help="Record CPU intervals and phase transitions in one extra CSV.",
+    )
+    parser.add_argument(
+        "--cpu-sample-interval", type=float, default=0.1,
+        help="CPU profiling interval in seconds (default: 0.1).",
+    )
     args = parser.parse_args()
+
+    if (not math.isfinite(args.cpu_sample_interval)
+            or args.cpu_sample_interval <= 0):
+        parser.error("--cpu-sample-interval must be finite and positive")
 
     if args.cycles < 0:
         parser.error("--cycles must be zero (unlimited) or positive")
@@ -358,8 +466,12 @@ def main():
     filename = args.output_dir / f"bridge_N{len(devices)}.csv"
     run_id = uuid.uuid4().hex
 
+    profile_path = args.output_dir / f"bridge_cpu_profile_N{len(devices)}.csv"
+    if args.cpu_profile and profile_path.exists():
+        raise FileExistsError(f"CPU profile already exists: {profile_path}")
+
     # Exclusive creation preserves the existing no-overwrite behaviour.
-    with open(filename, "x", newline="") as csv_file:
+    with open(filename, "x", newline="") as csv_file, ExitStack() as stack:
         with zmq.Context() as context:
             server_started = False
 
@@ -377,6 +489,13 @@ def main():
                 writer.writerow(CSV_COLUMNS)
                 print("Saving diagnostics to:", filename)
 
+                cpu_profile = (
+                    stack.enter_context(CpuProfiler(
+                        profile_path, args.cpu_sample_interval,
+                    )) if args.cpu_profile else None
+                )
+                if cpu_profile:
+                    print("Saving CPU profile to:", profile_path)
                 process = psutil.Process()
                 process.cpu_percent(None)
                 count = 0
@@ -386,6 +505,11 @@ def main():
                 while args.cycles == 0 or count < args.cycles:
                     metrics = reset_metrics()
                     cycle_started = time.perf_counter()
+                    if cpu_profile:
+                        cpu_profile.phase(
+                            "sleep", 0 if warming_up else count + 1,
+                            warming_up, event="cycle_start",
+                        )
                     time.sleep(CYCLE_DELAY_S)
 
                     if warming_up:
@@ -398,13 +522,17 @@ def main():
                         )
 
                     for device in devices:
+                        if cpu_profile:
+                            cpu_profile.phase("request")
                         response = zmqd_request(
                             context, device, metrics,
                             zmq_em_pb2.GetSensors(), zmq_em_pb2.GetSensors,
-                            use_any_response=False,
+                            use_any_response=False, cpu_profile=cpu_profile,
                         )
 
                         if response is not None:
+                            if cpu_profile:
+                                cpu_profile.phase("node_update")
                             update_started = time.perf_counter()
                             try:
                                 update_node(
@@ -417,6 +545,9 @@ def main():
                                     time.perf_counter() - update_started
                                 ) * 1000
 
+                    if cpu_profile:
+                        cpu_profile.phase("bookkeeping")
+                        cpu_profile.check()
                     if warming_up:
                         elapsed = time.perf_counter() - warmup_started
                         process.cpu_percent(None)
@@ -428,6 +559,10 @@ def main():
                                 "Starting measured cycles."
                             )
 
+                        if cpu_profile:
+                            cpu_profile.phase(
+                                "between_cycles", event="cycle_end",
+                            )
                         continue
 
                     cycle_s = time.perf_counter() - cycle_started
@@ -475,6 +610,9 @@ def main():
                         f"{cycle_s:.2f} s | CPU {cpu:.1f}% | "
                         f"RAM {ram_mb:.1f} MB"
                     )
+
+                    if cpu_profile:
+                        cpu_profile.phase("between_cycles", event="cycle_end")
 
             except KeyboardInterrupt:
                 pass

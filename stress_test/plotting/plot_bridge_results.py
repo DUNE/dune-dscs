@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot bridge diagnostics, slow cycles and optional Ignition resources.
+"""Plot bridge diagnostics and slow cycles.
 
 Run from stress_test with:
     python plotting/plot_bridge_results.py --data-dir results/bridge_only
@@ -379,7 +379,7 @@ def summarize_runs(datasets):
     return runs
 
 
-def plot_bridge_results(datasets, summary, runs, comparison, args):
+def plot_bridge_results(datasets, summary, runs, args):
     """Write cycle, scaling and resource figures to the main report."""
     with PdfPages(args.output_dir / "bridge_results.pdf") as pdf:
 
@@ -618,8 +618,125 @@ def plot_bridge_results(datasets, summary, runs, comparison, args):
             save_plot(fig, f"cpu_vs_node_update_N{item['N']}", pdf, args,
                       "Each point represents one analysed polling cycle.")
 
-        if comparison is not None:
-            plot_resource_comparisons(comparison, pdf, args)
+        plot_cpu_profiles(datasets, pdf, args)
+
+
+def plot_cpu_profiles(datasets, pdf, args):
+    """Show CPU interval averages beside exact polling-loop transitions."""
+    labels = {
+        "sleep": "Sleep", "request": "Requests / network wait",
+        "parsing": "Response parsing", "node_update": "OPC UA updates",
+        "bookkeeping": "Bookkeeping",
+    }
+    colors = {
+        "sleep": "#64748b", "request": BLUE, "parsing": ORANGE,
+        "node_update": GREEN, "bookkeeping": PURPLE,
+    }
+    for item in datasets:
+        n = item["N"]
+        path = args.data_dir / f"bridge_cpu_profile_N{n}.csv"
+        if not path.is_file():
+            continue
+        try:
+            data = pd.read_csv(path)
+        except pd.errors.EmptyDataError:
+            print(f"Skipping empty CPU profile: {path.name}")
+            continue
+        required = {
+            "elapsed_s", "event", "cycle", "warmup", "phase",
+            "cpu_percent", "interval_s",
+        }
+        if not required.issubset(data.columns):
+            raise ValueError(f"{path}: missing CPU profile columns")
+        for column in required - {"event", "phase"}:
+            data[column] = pd.to_numeric(data[column], errors="coerce")
+        data = data.replace([np.inf, -np.inf], np.nan)
+        data = data.dropna(subset=["elapsed_s"]).sort_values("elapsed_s")
+        phases = data.loc[data["event"].ne("sample")]
+        starts = phases.loc[
+            phases["event"].eq("cycle_start") & phases["warmup"].eq(0)
+        ].set_index("cycle")["elapsed_s"]
+        ends = phases.loc[
+            phases["event"].eq("cycle_end") & phases["warmup"].eq(0)
+        ].set_index("cycle")["elapsed_s"]
+        if starts.index.has_duplicates or ends.index.has_duplicates:
+            raise ValueError(f"{path}: duplicate measured cycle boundaries")
+        available = sorted(
+            set(starts.index) & set(ends.index) & set(item["data"]["cycle"])
+        )
+        selected = args.profile_cycles or available[:3]
+        samples = data.loc[
+            data["event"].eq("sample") & data["interval_s"].gt(0)
+            & data["cpu_percent"].ge(0)
+        ].copy()
+        samples["left_s"] = samples["elapsed_s"] - samples["interval_s"]
+        print(f"Reading CPU profile: {path}")
+        for cycle in selected:
+            if cycle not in available:
+                print(f"{path.name}: no complete profiled cycle {cycle}")
+                continue
+            start, end = starts.loc[cycle], ends.loc[cycle]
+            if end <= start:
+                raise ValueError(f"{path}: invalid boundary for cycle {cycle}")
+            values = samples.loc[
+                samples["elapsed_s"].gt(start) & samples["left_s"].lt(end)
+            ]
+            if values.empty:
+                print(f"{path.name}: cycle {cycle} has no CPU samples")
+                continue
+            fig, axes = plt.subplots(2, 1, figsize=(10, 6.8), sharex=True)
+            partial = values["left_s"].lt(start) | values["elapsed_s"].gt(end)
+            for mask, color, style, label in [
+                (~partial, BLUE, "solid", "CPU interval average"),
+                (partial, ORANGE, "dashed", "Interval crosses cycle boundary"),
+            ]:
+                group = values.loc[mask]
+                if not group.empty:
+                    axes[0].hlines(
+                        group["cpu_percent"],
+                        group["left_s"].clip(lower=start) - start,
+                        group["elapsed_s"].clip(upper=end) - start,
+                        color=color, linestyle=style, linewidth=2, label=label,
+                    )
+            axes[0].set(
+                ylabel="Bridge process CPU (%)",
+                ylim=(0, max(1, values["cpu_percent"].max() * 1.2)),
+            )
+            axes[0].legend(
+                fontsize=9, loc="lower left", bbox_to_anchor=(0, 1.02),
+                ncol=2, borderaxespad=0,
+            )
+            timeline = phases.loc[
+                phases["elapsed_s"].ge(start)
+                & phases["elapsed_s"].lt(end)
+            ].copy()
+            timeline["end_s"] = timeline["elapsed_s"].shift(-1).fillna(end)
+            names = list(labels)
+            for index, phase in enumerate(names):
+                spans = timeline.loc[timeline["phase"].eq(phase)]
+                axes[1].broken_barh(
+                    [(row.elapsed_s - start, row.end_s - row.elapsed_s)
+                     for row in spans.itertuples()],
+                    (index - 0.3, 0.6), color=colors[phase],
+                )
+            axes[1].set_yticks(range(len(names)), [labels[x] for x in names])
+            axes[1].set(
+                xlabel="Time since profiled cycle start (s)",
+                xlim=(0, end - start), ylim=(-0.6, len(names) - 0.4),
+            )
+            for ax in axes:
+                style_axis(ax)
+            fig.suptitle(
+                f"Within-cycle bridge CPU | N = {n}, cycle {int(cycle)}")
+            save_plot(
+                fig, f"cpu_profile_N{n}_cycle{int(cycle)}", pdf, args,
+                "CPU averages cover the displayed sampling intervals; dashed "
+                "intervals also include time outside this cycle. The timeline "
+                "shows polling-loop phases, not CPU attribution. CPU includes "
+                "all bridge threads and profiling overhead; 100% means one "
+                "logical CPU. Short phases "
+                "cannot be resolved by coarse CPU samples.",
+            )
 
 
 def prepare_peak_analysis(datasets, args):
@@ -1095,85 +1212,12 @@ def save_plot(fig, name, pdf, args, note=None):
     plt.close(fig)
 
 
-def load_ignition_resources(folder, selected_devices):
-    """Read Gateway resources from one explicitly selected experiment."""
-    path = folder / "ignition_resources.csv"
-    data = pd.read_csv(path)
-    required = {"N", "cpu_percent", "rss_mb"}
-    missing = required - set(data.columns)
-    if missing:
-        raise ValueError(f"{path}: missing columns {sorted(missing)}")
-    for column in required:
-        data[column] = pd.to_numeric(data[column], errors="coerce")
-    data = data.replace([np.inf, -np.inf], np.nan)
-    data = data.dropna(subset=["N"])
-    if data["N"].le(0).any() or data["N"].mod(1).ne(0).any():
-        raise ValueError(f"{path}: N must contain positive integers")
-    if selected_devices:
-        data = data[data["N"].isin(selected_devices)]
-    rows = []
-    for n, group in data.groupby("N"):
-        for column in ("cpu_percent", "rss_mb"):
-            values = group[column].dropna()
-            if values.empty:
-                continue
-            rows.append({
-                "N": int(n), "metric": column, "samples": len(values),
-                "mean": values.mean(), "median": values.median(),
-                "p05": values.quantile(0.05),
-                "p95": values.quantile(0.95),
-                "maximum": values.max(),
-            })
-    if not rows:
-        raise ValueError(f"No valid resource measurements in {path}")
-    print(f"Ignition resources: {path}")
-    return pd.DataFrame(rows)
-
-
-def plot_resource_comparisons(comparison, pdf, args):
-    """Keep each component's own device counts when comparing resources."""
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8))
-    for ax, metric, title, unit in [
-        (axes[0], "cpu_percent", "CPU usage", "Process CPU usage (%)"),
-        (axes[1], "ram_mb", "Resident memory", "Resident memory (MB)"),
-    ]:
-        for component, frame, color in comparison:
-            key = metric
-            if component == "Ignition" and metric == "ram_mb":
-                key = "rss_mb"
-            values = frame.loc[frame["metric"].eq(key)].sort_values("N")
-            if values.empty:
-                continue
-            ax.fill_between(
-                values["N"].to_numpy(), values["p05"].to_numpy(),
-                values["p95"].to_numpy(), color=color, alpha=0.15,
-            )
-            ax.plot(
-                values["N"], values["median"], marker="o",
-                linewidth=2, markersize=4, color=color, label=component,
-            )
-        ax.set(title=title, ylabel=unit, ylim=(0, None))
-        style_axis(ax, versus_n=True)
-        ax.legend(
-            loc="upper left" if metric == "cpu_percent" else "center right",
-            fontsize=12, frameon=False,
-        )
-    save_plot(
-        fig, "bridge_ignition_resources_vs_N", pdf, args,
-        "Lines: medians. Bands: P5–P95 across samples, not confidence "
-        "intervals. 100% CPU = one logical CPU. Ignition uses all resource "
-        "samples in the selected experiment; these may include warm-up. "
-        "The two folders may represent separate test runs.",
-    )
-
-
 def parse_arguments():
     """Select experiment folders without hard-coded historical datasets."""
     parser = argparse.ArgumentParser(
         description=(
             "Create bridge performance and peak-analysis reports from "
-            "bridge_N<number>.csv files. Optionally compare "
-            "Ignition resources."
+            "bridge_N<number>.csv files."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -1184,10 +1228,6 @@ def parse_arguments():
     parser.add_argument(
         "--output-dir", type=Path,
         help="Report folder; default: figures/<experiment folder name>",
-    )
-    parser.add_argument(
-        "--ignition-dir", type=Path,
-        help="Optional experiment folder containing ignition_resources.csv",
     )
     parser.add_argument(
         "--devices", type=int, nargs="+",
@@ -1215,7 +1255,17 @@ def parse_arguments():
         "--no-images", action="store_true",
         help="Save the two PDFs and CSV summaries without individual PNGs",
     )
+    parser.add_argument(
+        "--profile-cycles", type=int, nargs="+",
+        help=(
+            "CPU profile cycles to plot; default: "
+            "first three complete measured cycles"
+        ),
+    )
     args = parser.parse_args()
+    if (args.profile_cycles
+            and any(cycle <= 0 for cycle in args.profile_cycles)):
+        parser.error("--profile-cycles must contain positive cycle numbers")
     if args.skip_cycles < 0:
         parser.error("--skip-cycles must be nonnegative")
     if not math.isfinite(args.slow_threshold) or args.slow_threshold <= 0:
@@ -1231,8 +1281,6 @@ def parse_arguments():
         args.output_dir.expanduser().resolve() if args.output_dir
         else ROOT / "figures" / args.data_dir.name
     )
-    if args.ignition_dir:
-        args.ignition_dir = args.ignition_dir.expanduser().resolve()
     return args
 
 
@@ -1247,12 +1295,6 @@ def main():
             raise ValueError(f"No usable bridge files for N={sorted(missing)}")
     summary = summarize_metrics(datasets)
     runs = summarize_runs(datasets)
-    comparison = None
-    if args.ignition_dir:
-        ignition = load_ignition_resources(args.ignition_dir, args.devices)
-        comparison = [
-            ("Bridge", summary, BLUE), ("Ignition", ignition, ORANGE),
-        ]
     args.output_dir.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({
         "font.size": 11, "axes.titlesize": 14,
@@ -1261,10 +1303,6 @@ def main():
     })
     summary.to_csv(args.output_dir / "bridge_summary.csv", index=False)
     runs.to_csv(args.output_dir / "bridge_run_totals.csv", index=False)
-    if comparison:
-        comparison[1][1].to_csv(
-            args.output_dir / "ignition_resource_summary.csv", index=False,
-        )
     pd.DataFrame([
         {"source_file": str(item["file"].resolve()), "N": item["N"],
          "raw_cycles": item["raw_cycles"],
@@ -1279,7 +1317,7 @@ def main():
         json.dumps(settings, indent=2) + "\n", encoding="utf-8",
     )
     cycle_tables, peaks = prepare_peak_analysis(datasets, args)
-    plot_bridge_results(datasets, summary, runs, comparison, args)
+    plot_bridge_results(datasets, summary, runs, args)
     plot_peak_analysis(cycle_tables, peaks, summary, args)
     print(f"\nReports saved in {args.output_dir}")
     print("  bridge_results.pdf")
