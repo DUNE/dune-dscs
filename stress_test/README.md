@@ -264,6 +264,8 @@ timeout per request. Press Ctrl+C to stop it.
 
 ### Diagnostic bridge: one device count
 
+Run from the `stress_test` root:
+
 ```bash
 python bridge/ignition_pybridge_diagnostic.py \
     --devices 10 \
@@ -275,27 +277,88 @@ python bridge/ignition_pybridge_diagnostic.py \
 | Option | Meaning and default |
 |---|---|
 | `--devices` | Required device count, from 1 to 1000; check actual emulator capacity. |
-| `--cycles` | Measured polling cycles; default `10`. |
+| `--cycles` | Measured polling cycles; default `10`. Use `0` to run until stopped. |
 | `--warmup` | Warm-up duration in seconds; default `30`. |
 | `--output-dir` | Measurement destination; default `stress_test/results`. |
-| `--timer-enabled` | Publish recurring Gateway collection setting; default `true`. |
-| `--cache-enabled` | Publish Gateway caching setting; default `true`. |
+| `--timer-enabled` | Enable recurring Gateway diagnostic collection; default `true`. Requires the configurable Gateway timer. |
+| `--cache-enabled` | Reuse Gateway tag paths; default `true`. |
 | `--wait-for-ignition` | Wait for Gateway readiness before warm-up; off unless supplied. |
 | `--setup-timeout` | Readiness timeout in seconds; default `60`. |
+| `--cpu-profile` | Record CPU samples and polling-phase transitions; off unless supplied. |
+| `--cpu-sample-interval` | CPU profiling interval in seconds; default `0.1`. Used with `--cpu-profile`. |
 
 The example creates `results/bridge_only/bridge_N10.csv`. Output folders
 are created automatically. Existing bridge CSVs are never overwritten.
-The diagnostic bridge uses a ten-second receive timeout per request.
 
-Warm-up is measured in seconds and completes at a polling-cycle
-boundary. Warm-up cycles update nodes but are excluded from the bridge
-CSV. Measured cycle durations include the one-second polling delay.
+The current diagnostic bridge uses a **one-second receive timeout per
+request**, configured by `REQUEST_TIMEOUT_MS = 1000`.
+
+Warm-up is measured in seconds and completes at a polling-cycle boundary.
+Warm-up cycles update nodes but are excluded from the normal bridge CSV.
+Measured cycle durations include the one-second polling delay.
 300 cycles are not necessarily 300 seconds.
 
 The bridge writes the device count, run ID, active state, diagnostic
 settings and selected output directory to `ignition_test_control.json`
 at the `stress_test` root. A folder name alone does not enable or disable
 Gateway diagnostics.
+
+Press Ctrl+C to stop the bridge.
+
+#### Optional CPU profiling within a cycle
+
+Use a separate short run:
+
+```bash
+python bridge/ignition_pybridge_diagnostic.py \
+    --devices 10 \
+    --cycles 10 \
+    --warmup 5 \
+    --cpu-profile \
+    --cpu-sample-interval 0.1 \
+    --output-dir results/bridge_cpu_profile
+```
+
+In addition to the normal per-cycle CSV, this creates:
+
+```text
+results/bridge_cpu_profile/bridge_cpu_profile_N10.csv
+```
+
+The profile records:
+
+- Whole-process CPU averages over the actual sampling intervals.
+- Cycle boundaries and warm-up markers.
+- Polling-phase transitions: sleep, requests, response parsing,
+  OPC UA node updates and bookkeeping.
+
+CPU samples use an independent `psutil.Process` object, so they do not
+reset the normal per-cycle CPU counter. Sampling intervals may span
+several phases or cross cycle boundaries.
+
+Generate the profile plots:
+
+```bash
+python plotting/plot_bridge_results.py \
+    --data-dir results/bridge_cpu_profile \
+    --profile-cycles 1 2 3 \
+    --output-dir figures/bridge_cpu_profile
+```
+
+Profile plots are included in `bridge_results.pdf` and saved as individual
+PNGs. Without `--profile-cycles`, the first three complete measured cycles
+are selected when profile data is available.
+
+The CPU graph represents all bridge threads. The phase timeline shows
+what the polling loop was doing; it does not directly attribute CPU usage
+to individual phases.
+
+Profiling adds overhead and produces phase records for each request.
+Use short diagnostic runs initially. Profiling remains disabled during
+normal runs, and the automated runners do not currently forward these
+optional profiling arguments.
+
+Only one bridge can use port 4840 on a host at a time.
 
 ### OPC UA connection
 
@@ -680,23 +743,75 @@ as `bridge_N900_1.csv` are not selected.
 
 ### Bridge-only report
 
+Run from the `stress_test` root:
+
 ```bash
 python plotting/plot_bridge_results.py \
     --data-dir results/bridge_only \
     --output-dir figures/bridge_only
 ```
 
-This produces individual cycle plots, measurements versus N, compact
-error graphs and slow-cycle analysis. Main PDFs:
+The script reads `bridge_N<number>.csv` files from the selected experiment
+folder and produces:
+
+- Individual cycle-duration plots.
+- Measurements versus device count.
+- Compact timeout and error graphs.
+- Slow-cycle histograms, frequencies and timing diagnostics.
+- Within-cycle CPU profiles when profiling data is available.
+
+Main PDFs:
 
 - `bridge_results.pdf`
 - `bridge_peak_analysis.pdf`
 
 Individual PNGs, summary CSVs and input/settings records are saved in the
-same folder. A slow cycle defaults to more than 0.1 s above its run's
-median; a separate plot counts cycles more than 0.5 s above the median.
+same output folder. Add `--no-images` to save PDFs and tables without PNGs.
+
+#### Slow-cycle analysis
+
+A slow cycle defaults to more than **0.1 seconds above its run's median**.
+A separate plot counts cycles more than **0.5 seconds above the median**.
+
 Use `--slow-threshold` to change the first threshold. The timing breakdown
-assumes a one-second fixed polling delay; use `--poll-sleep` if changed.
+assumes a one-second fixed polling delay; use `--poll-sleep` if that delay
+has changed.
+
+#### Within-cycle CPU profiles
+
+If the input folder also contains `bridge_cpu_profile_N<number>.csv`,
+the script adds CPU-profile pages to `bridge_results.pdf`.
+
+By default, it plots the first three complete measured cycles for each
+device count. To choose specific cycles:
+
+```bash
+python plotting/plot_bridge_results.py \
+    --data-dir results/bridge_cpu_profile \
+    --profile-cycles 1 2 3 \
+    --output-dir figures/bridge_cpu_profile
+```
+
+Each profile figure shows:
+
+- Whole-process CPU averages over their sampling intervals.
+- A timeline of polling-loop phases: sleep, requests, response parsing,
+  OPC UA node updates and bookkeeping.
+
+Dashed CPU intervals cross a cycle boundary and include time outside the
+displayed cycle. Phase timestamps provide context, not direct attribution
+of CPU usage to an operation. Warm-up and incomplete cycles are excluded
+from these plots.
+
+Individual profile images use names such as:
+
+```text
+cpu_profile_N10_cycle1.png
+```
+
+If no CPU-profile CSV is present, the standard bridge reports still work.
+Source measurements are never modified. Generated files with matching
+names are overwritten when the same output folder is reused.
 
 ### Ignition-only report
 
