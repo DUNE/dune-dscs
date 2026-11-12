@@ -622,16 +622,8 @@ def plot_bridge_results(datasets, summary, runs, args):
 
 
 def plot_cpu_profiles(datasets, pdf, args):
-    """Show CPU interval averages beside exact polling-loop transitions."""
-    labels = {
-        "sleep": "Sleep", "request": "Requests / network wait",
-        "parsing": "Response parsing", "node_update": "OPC UA updates",
-        "bookkeeping": "Bookkeeping",
-    }
-    colors = {
-        "sleep": "#64748b", "request": BLUE, "parsing": ORANGE,
-        "node_update": GREEN, "bookkeeping": PURPLE,
-    }
+    """Plot only CPU versus time for each chosen measured cycle."""
+    produced = 0
     for item in datasets:
         n = item["N"]
         path = args.data_dir / f"bridge_cpu_profile_N{n}.csv"
@@ -664,7 +656,7 @@ def plot_cpu_profiles(datasets, pdf, args):
         available = sorted(
             set(starts.index) & set(ends.index) & set(item["data"]["cycle"])
         )
-        selected = args.profile_cycles or available[:3]
+        selected = list(dict.fromkeys(args.profile_cycles or available[:3]))
         samples = data.loc[
             data["event"].eq("sample") & data["interval_s"].gt(0)
             & data["cpu_percent"].ge(0)
@@ -684,59 +676,49 @@ def plot_cpu_profiles(datasets, pdf, args):
             if values.empty:
                 print(f"{path.name}: cycle {cycle} has no CPU samples")
                 continue
-            fig, axes = plt.subplots(2, 1, figsize=(10, 6.8), sharex=True)
+            fig, ax = plt.subplots(figsize=(9, 4.5))
             partial = values["left_s"].lt(start) | values["elapsed_s"].gt(end)
             for mask, color, style, label in [
                 (~partial, BLUE, "solid", "CPU interval average"),
-                (partial, ORANGE, "dashed", "Interval crosses cycle boundary"),
+                (partial, ORANGE, "dashed", "Crosses cycle boundary"),
             ]:
                 group = values.loc[mask]
                 if not group.empty:
-                    axes[0].hlines(
+                    ax.hlines(
                         group["cpu_percent"],
                         group["left_s"].clip(lower=start) - start,
                         group["elapsed_s"].clip(upper=end) - start,
                         color=color, linestyle=style, linewidth=2, label=label,
                     )
-            axes[0].set(
+            ax.set(
+                title=f"Bridge CPU | N = {n}, cycle {int(cycle)}",
+                xlabel="Time since cycle start (s)",
                 ylabel="Bridge process CPU (%)",
+                xlim=(0, end - start),
                 ylim=(0, max(1, values["cpu_percent"].max() * 1.2)),
             )
-            axes[0].legend(
-                fontsize=9, loc="lower left", bbox_to_anchor=(0, 1.02),
-                ncol=2, borderaxespad=0,
+            style_axis(ax)
+            ax.legend(fontsize=10, loc="lower left",
+                      bbox_to_anchor=(0, 1.15), ncol=2)
+            name = f"cpu_profile_N{n}_cycle{int(cycle)}"
+            note = (
+                "CPU is averaged over each sampling interval. Dashed "
+                "intervals include time outside the cycle. "
+                "100% CPU = one logical CPU."
             )
-            timeline = phases.loc[
-                phases["elapsed_s"].ge(start)
-                & phases["elapsed_s"].lt(end)
-            ].copy()
-            timeline["end_s"] = timeline["elapsed_s"].shift(-1).fillna(end)
-            names = list(labels)
-            for index, phase in enumerate(names):
-                spans = timeline.loc[timeline["phase"].eq(phase)]
-                axes[1].broken_barh(
-                    [(row.elapsed_s - start, row.end_s - row.elapsed_s)
-                     for row in spans.itertuples()],
-                    (index - 0.3, 0.6), color=colors[phase],
-                )
-            axes[1].set_yticks(range(len(names)), [labels[x] for x in names])
-            axes[1].set(
-                xlabel="Time since profiled cycle start (s)",
-                xlim=(0, end - start), ylim=(-0.6, len(names) - 0.4),
-            )
-            for ax in axes:
-                style_axis(ax)
-            fig.suptitle(
-                f"Within-cycle bridge CPU | N = {n}, cycle {int(cycle)}")
-            save_plot(
-                fig, f"cpu_profile_N{n}_cycle{int(cycle)}", pdf, args,
-                "CPU averages cover the displayed sampling intervals; dashed "
-                "intervals also include time outside this cycle. The timeline "
-                "shows polling-loop phases, not CPU attribution. CPU includes "
-                "all bridge threads and profiling overhead; 100% means one "
-                "logical CPU. Short phases "
-                "cannot be resolved by coarse CPU samples.",
-            )
+            if pdf is None:
+                fig.text(0.5, 0.01, textwrap.fill(note, 105),
+                         ha="center", va="bottom", fontsize=9)
+                fig.tight_layout(rect=(0, 0.12, 1, 0.95))
+                extension = "pdf" if args.no_images else "png"
+                output = args.output_dir / f"{name}.{extension}"
+                fig.savefig(output, dpi=250)
+                plt.close(fig)
+                print(f"Saved {output}")
+            else:
+                save_plot(fig, name, pdf, args, note)
+            produced += 1
+    return produced
 
 
 def prepare_peak_analysis(datasets, args):
@@ -1253,7 +1235,10 @@ def parse_arguments():
     )
     parser.add_argument(
         "--no-images", action="store_true",
-        help="Save the two PDFs and CSV summaries without individual PNGs",
+        help=(
+            "Save reports without PNGs; single-N profiles save "
+            "one PDF per cycle"
+        ),
     )
     parser.add_argument(
         "--profile-cycles", type=int, nargs="+",
@@ -1293,14 +1278,23 @@ def main():
         missing = set(args.devices) - {item["N"] for item in datasets}
         if missing:
             raise ValueError(f"No usable bridge files for N={sorted(missing)}")
-    summary = summarize_metrics(datasets)
-    runs = summarize_runs(datasets)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({
         "font.size": 11, "axes.titlesize": 14,
         "axes.spines.top": False, "axes.spines.right": False,
         "legend.frameon": False,
     })
+    if len(datasets) == 1:
+        n = datasets[0]["N"]
+        if (args.data_dir / f"bridge_cpu_profile_N{n}.csv").is_file():
+            produced = plot_cpu_profiles(datasets, None, args)
+            if not produced:
+                raise ValueError("No complete CPU profiles for chosen cycles")
+            print(
+                f"Saved {produced} CPU cycle plots; no other reports created.")
+            return
+    summary = summarize_metrics(datasets)
+    runs = summarize_runs(datasets)
     summary.to_csv(args.output_dir / "bridge_summary.csv", index=False)
     runs.to_csv(args.output_dir / "bridge_run_totals.csv", index=False)
     pd.DataFrame([
