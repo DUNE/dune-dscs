@@ -40,7 +40,11 @@ METRICS = {
         "Polling-cycle duration", "Cycle duration (s)"
     ),
     "cpu_percent": (
-        "Bridge CPU usage", "Process CPU usage (%)"
+        "Bridge CPU usage: including and excluding sleep",
+        "Process CPU usage (%)"
+    ),
+    "cpu_active_percent": (
+        "Bridge CPU excluding polling sleep", "Process CPU usage (%)"
     ),
     "ram_mb": (
         "Bridge resident memory", "Resident memory (MB)"
@@ -379,12 +383,29 @@ def summarize_runs(datasets):
     return runs
 
 
+def cpu_comparison_bands(ax, summary):
+    """Show both CPU definitions with their own cycle distributions."""
+    for metric, label, color in [
+        ("cpu_percent", "Including sleep", BLUE),
+        ("cpu_active_percent", "Excluding sleep", ORANGE),
+    ]:
+        selected = summary.loc[summary["metric"].eq(metric)].sort_values("N")
+        if selected.empty:
+            continue
+        ax.plot(selected["N"], selected["median"], marker="o",
+                color=color, linewidth=1.8, label=f"{label}: median")
+        ax.fill_between(selected["N"].to_numpy(),
+                        selected["p05"].to_numpy(),
+                        selected["p95"].to_numpy(), color=color, alpha=0.13,
+                        label=f"{label}: P5–P95")
+
+
 def plot_bridge_results(datasets, summary, runs, args):
     """Write cycle, scaling and resource figures to the main report."""
     with PdfPages(args.output_dir / "bridge_results.pdf") as pdf:
 
         # Individual cycle-duration plots.
-        for item in datasets:
+        for item in datasets if args.extra_diagnostic_pictures else []:
             data = item["data"]
             fig, ax = plt.subplots(figsize=(9, 4.5))
 
@@ -414,13 +435,33 @@ def plot_bridge_results(datasets, summary, runs, args):
                 fig, f"{item['file'].stem}_cycle_time", pdf, args
             )
 
+            if "cpu_active_percent" in data:
+                fig, ax = plt.subplots(figsize=(9, 4.5))
+                for column, label, color in [
+                    ("cpu_percent", "Including sleep", BLUE),
+                    ("cpu_active_percent", "Excluding sleep", ORANGE),
+                ]:
+                    ax.plot(data["cycle"], data[column], label=label,
+                            color=color, linewidth=1)
+                ax.set(title=f"Bridge CPU | N = {item['N']}",
+                       xlabel="Polling cycle", ylabel="Process CPU (%)")
+                ax.set_ylim(bottom=0)
+                style_axis(ax)
+                add_legend(ax)
+                save_plot(fig, f"{item['file'].stem}_cpu", pdf, args)
+
         # Each metric versus N.
         for metric, (title, ylabel) in METRICS.items():
+            if metric == "cpu_active_percent":
+                continue
             if metric not in set(summary["metric"]):
                 continue
 
             fig, ax = plt.subplots(figsize=(9, 5))
-            selected = median_band(ax, summary, metric)
+            if metric == "cpu_percent":
+                cpu_comparison_bands(ax, summary)
+            else:
+                selected = median_band(ax, summary, metric)
 
             if metric == "cycle_s":
                 add_line(
@@ -438,13 +479,23 @@ def plot_bridge_results(datasets, summary, runs, args):
                 "not confidence intervals."
             )
             if metric == "cpu_percent":
-                note += " 100% CPU = one logical CPU."
+                note += (
+                    " Lines: medians; bands: P5–P95. "
+                    "100% CPU = one logical CPU."
+                )
             elif metric in {
                 "request_median_ms", "request_p95_ms", "request_p99_ms"
             }:
                 note += " These are per-cycle request statistics."
 
-            save_plot(fig, f"{metric}_vs_N", pdf, args, note)
+            name = (
+                "cpu_including_vs_excluding_sleep_vs_N"
+                if metric == "cpu_percent" else f"{metric}_vs_N"
+            )
+            if metric == "cpu_percent":
+                fig.tight_layout(rect=(0, 0.12, 1, 1))
+                fig.savefig(args.output_dir / f"{name}.pdf")
+            save_plot(fig, name, pdf, args, note)
 
         # Combined CPU and RAM.
         fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
@@ -453,7 +504,10 @@ def plot_bridge_results(datasets, summary, runs, args):
             (axes[0], "cpu_percent", "Bridge CPU", "Process CPU (%)"),
             (axes[1], "ram_mb", "Bridge memory", "Resident memory (MB)"),
         ]:
-            median_band(ax, summary, metric)
+            if metric == "cpu_percent":
+                cpu_comparison_bands(ax, summary)
+            else:
+                median_band(ax, summary, metric)
             ax.set_title(title)
             ax.set_ylabel(ylabel)
             style_axis(ax, versus_n=True)
@@ -600,7 +654,7 @@ def plot_bridge_results(datasets, summary, runs, args):
         save_plot(fig, "bridge_errors_vs_N_compact", pdf, args,
                   "Totals over analysed cycles for each device count.")
 
-        for item in datasets:
+        for item in datasets if args.extra_diagnostic_pictures else []:
             data = item["data"]
             required = {"update_total_ms", "cpu_percent"}
             if not required.issubset(data.columns):
@@ -618,7 +672,8 @@ def plot_bridge_results(datasets, summary, runs, args):
             save_plot(fig, f"cpu_vs_node_update_N{item['N']}", pdf, args,
                       "Each point represents one analysed polling cycle.")
 
-        plot_cpu_profiles(datasets, pdf, args)
+        if args.extra_diagnostic_pictures:
+            plot_cpu_profiles(datasets, pdf, args)
 
 
 def plot_cpu_profiles(datasets, pdf, args):
@@ -677,19 +732,31 @@ def plot_cpu_profiles(datasets, pdf, args):
                 print(f"{path.name}: cycle {cycle} has no CPU samples")
                 continue
             fig, ax = plt.subplots(figsize=(9, 4.5))
-            partial = values["left_s"].lt(start) | values["elapsed_s"].gt(end)
-            for mask, color, style, label in [
-                (~partial, BLUE, "solid", "CPU interval average"),
-                (partial, ORANGE, "dashed", "Crosses cycle boundary"),
-            ]:
-                group = values.loc[mask]
-                if not group.empty:
-                    ax.hlines(
-                        group["cpu_percent"],
-                        group["left_s"].clip(lower=start) - start,
-                        group["elapsed_s"].clip(upper=end) - start,
-                        color=color, linestyle=style, linewidth=2, label=label,
-                    )
+            # Connect adjacent intervals while retaining genuine data gaps.
+            groups = (
+                values["left_s"] - values["elapsed_s"].shift()
+            ).abs().gt(1e-6).cumsum()
+            for index, (_, group) in enumerate(values.groupby(groups)):
+                edges = np.r_[
+                    max(start, group["left_s"].iloc[0]),
+                    group["elapsed_s"].clip(upper=end).to_numpy(),
+                ] - start
+                ax.stairs(
+                    group["cpu_percent"].to_numpy(), edges, baseline=None,
+                    color=BLUE, linewidth=1.8, zorder=3,
+                    label="CPU interval average" if index == 0 else None,
+                )
+            partial = values.loc[
+                values["left_s"].lt(start) | values["elapsed_s"].gt(end)
+            ]
+            if not partial.empty:
+                ax.hlines(
+                    partial["cpu_percent"],
+                    partial["left_s"].clip(lower=start) - start,
+                    partial["elapsed_s"].clip(upper=end) - start,
+                    color=ORANGE, linestyle="dashed", linewidth=2,
+                    zorder=4, label="Crosses cycle boundary",
+                )
             ax.set(
                 title=f"Bridge CPU | N = {n}, cycle {int(cycle)}",
                 xlabel="Time since cycle start (s)",
@@ -701,22 +768,15 @@ def plot_cpu_profiles(datasets, pdf, args):
             ax.legend(fontsize=10, loc="lower left",
                       bbox_to_anchor=(0, 1.15), ncol=2)
             name = f"cpu_profile_N{n}_cycle{int(cycle)}"
-            note = (
-                "CPU is averaged over each sampling interval. Dashed "
-                "intervals include time outside the cycle. "
-                "100% CPU = one logical CPU."
-            )
             if pdf is None:
-                fig.text(0.5, 0.01, textwrap.fill(note, 105),
-                         ha="center", va="bottom", fontsize=9)
-                fig.tight_layout(rect=(0, 0.12, 1, 0.95))
+                fig.tight_layout()
                 extension = "pdf" if args.no_images else "png"
                 output = args.output_dir / f"{name}.{extension}"
                 fig.savefig(output, dpi=250)
                 plt.close(fig)
                 print(f"Saved {output}")
             else:
-                save_plot(fig, name, pdf, args, note)
+                save_plot(fig, name, pdf, args)
             produced += 1
     return produced
 
@@ -826,7 +886,9 @@ def plot_peak_analysis(cycle_tables, peaks, summary, args):
 
         # ---------- Full distribution and slow cycles ----------
 
-        for data in cycle_tables:
+        for data in (
+            cycle_tables if args.extra_diagnostic_pictures else []
+        ):
             n = int(data["N"].iloc[0])
             extra_ms = data["extra_cycle_s"].to_numpy() * 1000
             slow_ms = extra_ms[extra_ms > threshold_ms]
@@ -1008,7 +1070,9 @@ def plot_peak_analysis(cycle_tables, peaks, summary, args):
 
         # ---------- Timing diagnostics for each N ----------
 
-        for data in cycle_tables:
+        for data in (
+            cycle_tables if args.extra_diagnostic_pictures else []
+        ):
             n = int(data["N"].iloc[0])
 
             fig, axes = plt.subplots(
@@ -1194,6 +1258,109 @@ def save_plot(fig, name, pdf, args, note=None):
     plt.close(fig)
 
 
+def plot_cpu_comparison(dataset, args):
+    """Compare cycle CPU averages with independent external samples."""
+    data = dataset["data"].copy()
+    required = {"time_utc", "cpu_percent", "cpu_active_percent", "active_s"}
+    if required - set(data.columns):
+        raise ValueError("CPU comparison needs the new bridge CSV columns")
+    path = args.external_cpu or args.data_dir / "external_cpu.csv"
+    external = pd.read_csv(path)
+    required = {"time_utc", "interval_s", "cpu_percent", "pid"}
+    if required - set(external.columns):
+        raise ValueError(f"Missing external CPU columns in {path}")
+    for column in ("interval_s", "cpu_percent", "pid"):
+        external[column] = pd.to_numeric(external[column], errors="coerce")
+    for frame in (data, external):
+        frame["time_utc"] = pd.to_datetime(
+            frame["time_utc"], utc=True, errors="coerce", format="ISO8601",
+        )
+    external = external.replace([np.inf, -np.inf], np.nan).dropna(
+        subset=list(required),
+    ).sort_values("time_utc")
+    external = external.loc[external["interval_s"] > 0]
+    if external.empty or external["pid"].nunique() != 1:
+        raise ValueError("External CPU data must contain one process PID")
+    data = data.dropna(subset=[
+        "time_utc", "cpu_percent", "cpu_active_percent", "active_s",
+    ])
+    if data.empty:
+        raise ValueError("No valid cycle CPU measurements")
+
+    # CSV timestamps approximate cycle ends; intervals use actual durations.
+    origin = data["time_utc"].min() - pd.to_timedelta(
+        data.loc[data["time_utc"].idxmin(), "cycle_s"], unit="s",
+    )
+    ends = (data["time_utc"] - origin).dt.total_seconds().to_numpy()
+    starts = ends - data["cycle_s"].to_numpy()
+    sample_ends = (
+        external["time_utc"] - origin
+    ).dt.total_seconds().to_numpy()
+    sample_starts = sample_ends - external["interval_s"].to_numpy()
+    if np.any(sample_starts[1:] < sample_ends[:-1] - 0.005):
+        raise ValueError("External sample intervals overlap; check the CSV")
+    values = external["cpu_percent"].to_numpy()
+    cycle_external = []
+    for start, end in zip(starts, ends):
+        overlap = np.maximum(
+            0, np.minimum(sample_ends, end) - np.maximum(sample_starts, start),
+        )
+        covered = overlap.sum()
+        cycle_external.append(
+            np.dot(overlap, values) / covered
+            if covered >= 0.99 * (end - start) else np.nan
+        )
+    if not np.isfinite(cycle_external).any():
+        raise ValueError("External samples do not cover the measured cycles")
+
+    series = [
+        ("Cycle: including sleep", "cpu_percent", BLUE),
+        ("Cycle: excluding sleep", "cpu_active_percent", ORANGE),
+    ]
+    with PdfPages(args.output_dir / "bridge_cpu_comparison.pdf") as pdf:
+        fig, ax = plt.subplots(figsize=(11, 4.8))
+        for label, column, color in series:
+            ax.plot(data["cycle"], data[column], color=color,
+                    linewidth=1.4, label=label)
+        ax.plot(data["cycle"], cycle_external, color=GREEN,
+                linewidth=1.4, linestyle="--",
+                label="External: full-cycle overlap-weighted average")
+        ax.set(title=f"Bridge CPU comparison | N = {dataset['N']}",
+               xlabel="Polling cycle", ylabel="Process CPU usage (%)")
+        ax.set_ylim(bottom=0)
+        ax.grid(axis="y", alpha=0.2)
+        ax.legend(fontsize=10, loc="lower left", bbox_to_anchor=(0, 1.02),
+                  frameon=False)
+        ax.set_title(ax.get_title(), pad=85)
+        save_plot(fig, "cpu_comparison_by_cycle", pdf, args)
+
+        fig, ax = plt.subplots(figsize=(11, 4.8))
+        visible = (sample_ends >= starts.min()) & (
+            sample_starts <= ends.max()
+        )
+        ax.plot(sample_ends[visible], values[visible], color=GREEN,
+                linewidth=1, label="External: sampling-interval average")
+        for label, column, color in series:
+            window_starts = (
+                ends - data["active_s"].to_numpy()
+                if column == "cpu_active_percent" else starts
+            )
+            ax.hlines(data[column], window_starts, ends, color=color,
+                      linewidth=1.5, linestyles="dashed", label=label)
+        ax.set(title=f"Bridge CPU over time | N = {dataset['N']}",
+               xlabel="Elapsed time since first measured cycle (s)",
+               ylabel="Process CPU usage (%)",
+               xlim=(starts.min(), ends.max()))
+        ax.set_ylim(bottom=0)
+        ax.grid(axis="y", alpha=0.2)
+        ax.legend(fontsize=10, loc="lower left", bbox_to_anchor=(0, 1.02),
+                  frameon=False)
+        ax.set_title(ax.get_title(), pad=85)
+        save_plot(fig, "cpu_comparison_over_time", pdf, args)
+    print("Saved bridge_cpu_comparison.pdf (two pages).")
+    print("Cycle alignment uses approximate end timestamps from bridge CSV.")
+
+
 def parse_arguments():
     """Select experiment folders without hard-coded historical datasets."""
     parser = argparse.ArgumentParser(
@@ -1241,6 +1408,19 @@ def parse_arguments():
         ),
     )
     parser.add_argument(
+        "--extra-diagnostic-pictures", "--full-report",
+        dest="extra_diagnostic_pictures", action="store_true",
+        help="Include per-N cycle profiles and histograms; default: N plots",
+    )
+    parser.add_argument(
+        "--cpu-comparison", action="store_true",
+        help="Only compare cycle CPU and external CPU for one device count",
+    )
+    parser.add_argument(
+        "--external-cpu", type=Path,
+        help="External CPU CSV; default: <data-dir>/external_cpu.csv",
+    )
+    parser.add_argument(
         "--profile-cycles", type=int, nargs="+",
         help=(
             "CPU profile cycles to plot; default: "
@@ -1284,15 +1464,11 @@ def main():
         "axes.spines.top": False, "axes.spines.right": False,
         "legend.frameon": False,
     })
-    if len(datasets) == 1:
-        n = datasets[0]["N"]
-        if (args.data_dir / f"bridge_cpu_profile_N{n}.csv").is_file():
-            produced = plot_cpu_profiles(datasets, None, args)
-            if not produced:
-                raise ValueError("No complete CPU profiles for chosen cycles")
-            print(
-                f"Saved {produced} CPU cycle plots; no other reports created.")
-            return
+    if args.cpu_comparison:
+        if len(datasets) != 1:
+            raise ValueError("Select one N with --devices for CPU comparison")
+        plot_cpu_comparison(datasets[0], args)
+        return
     summary = summarize_metrics(datasets)
     runs = summarize_runs(datasets)
     summary.to_csv(args.output_dir / "bridge_summary.csv", index=False)

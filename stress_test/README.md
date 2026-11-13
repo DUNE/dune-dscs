@@ -305,6 +305,100 @@ Gateway diagnostics.
 
 Press Ctrl+C to stop the bridge.
 
+
+
+### CPU measurements: including sleep, excluding sleep and external sampling
+
+The diagnostic bridge automatically saves both cycle CPU averages in
+`bridge_N<number>.csv`. No additional option is needed:
+
+| Column | Measurement window |
+|---|---|
+| `cpu_percent` | Full cycle, including the one-second polling sleep. |
+| `cpu_active_percent` | Device requests, response parsing and node updates, excluding the polling sleep. |
+| `cycle_s` | Duration of the full cycle, including sleep. |
+| `active_s` | Duration of the active polling and update window. |
+
+Both CPU percentages are calculated as process CPU time divided by wall
+time for their respective windows, multiplied by 100. Process CPU time
+includes all bridge threads. The active window still includes waiting
+for emulator responses; it is not a measure of CPU execution time alone.
+These measurements exclude warm-up cycles.
+
+Use the full-cycle average to report normal resource consumption. Use
+the active average to describe CPU usage while polling and updating
+nodes. Keep the definitions consistent when comparing experiments.
+
+For a time profile independent of cycle boundaries, use the external
+`diagnostics/monitor_bridge_cpu.py` monitor. It must be saved in that
+location before running the following command. Run both processes on
+the same computer and choose an unused output folder:
+
+```bash
+cd ~/dune-dscs/stress_test
+source ~/DSCS/opcua-env/bin/activate
+
+python bridge/ignition_pybridge_diagnostic.py \
+    --devices 900 \
+    --cycles 300 \
+    --warmup 30 \
+    --output-dir results/bridge_900_cpu_comparison &
+
+bridge_pid=$!
+
+python diagnostics/monitor_bridge_cpu.py \
+    --pid "$bridge_pid" \
+    --interval 0.2 \
+    --output results/bridge_900_cpu_comparison/external_cpu.csv
+
+wait "$bridge_pid"
+```
+
+The `&` starts the bridge in the background. `$!` supplies its PID to
+the monitor automatically. The monitor samples approximately every
+0.2 seconds, without waiting for the bridge loop, and stops when the
+bridge exits. Ctrl+C stops the foreground monitor; the background
+bridge continues running.
+
+The experiment folder contains:
+
+- `bridge_N900.csv`: per-cycle diagnostics with both CPU averages.
+- `external_cpu.csv`: timestamps, elapsed time, actual sampling interval,
+  bridge PID and CPU percentage, including setup and warm-up while the
+  monitor is running.
+
+External samples include any sleep, waiting or work occurring within
+each interval. They are interval averages, like htop, rather than
+instantaneous CPU readings. Short intervals can produce discrete CPU
+levels because Linux process CPU counters have limited resolution.
+Use `--interval 1` for a smoother-resolution overview at one sample per
+second. Neither option applies additional smoothing.
+
+The external monitor does not require `--cpu-profile`. The optional
+internal profiler below is a separate way to record CPU intervals and
+cycle boundaries.
+
+To compare all three CPU measurements, run:
+
+```bash
+python plotting/plot_bridge_results.py \
+    --data-dir results/bridge_900_cpu_comparison \
+    --devices 900 \
+    --cpu-comparison \
+    --output-dir figures/bridge_900_cpu_comparison
+```
+
+This mode creates only two plots in `bridge_cpu_comparison.pdf`, with
+individual PNGs: CPU comparison by cycle and CPU versus elapsed time.
+External samples are weighted by their overlap with each cycle; cycles
+with less than 99% external coverage are omitted from that external
+curve. Alignment is approximate because the bridge CSV timestamp is
+recorded near the cycle end. The time plot shows the external samples
+and both bridge averages over their respective windows. Use
+`--external-cpu /path/to/file.csv` to select another external CSV.
+
+
+
 #### Optional CPU profiling within a cycle
 
 Use a separate short run:
@@ -743,75 +837,90 @@ as `bridge_N900_1.csv` are not selected.
 
 ### Bridge-only report
 
-Run from the `stress_test` root:
+By default, the plotting script generates figures with device count N
+on the horizontal axis. These include CPU usage, memory, acquisition
+rate, request latency, processing time and error counts.
+
+The CPU comparison shows both measurements:
+
+- **Including sleep:** median CPU usage across complete polling cycles.
+- **Excluding sleep:** median CPU usage during requests, parsing and
+  node updates, excluding the fixed polling sleep.
+
+Each CPU curve has a shaded P5–P95 band describing variation across
+cycles. These bands are not confidence intervals.
+
+#### Summary plots versus N
 
 ```bash
 python plotting/plot_bridge_results.py \
-    --data-dir results/bridge_only \
-    --output-dir figures/bridge_only
+    --data-dir results/bridge_cpu_both \
+    --output-dir figures/bridge_summary
 ```
 
-The script reads `bridge_N<number>.csv` files from the selected experiment
-folder and produces:
+Individual profiles for each device count are excluded by default.
 
-- Individual cycle-duration plots.
-- Measurements versus device count.
-- Compact timeout and error graphs.
-- Slow-cycle histograms, frequencies and timing diagnostics.
-- Within-cycle CPU profiles when profiling data is available.
+#### Include individual diagnostic plots
 
-Main PDFs:
+Add `--extra-diagnostic-pictures` to include cycle traces, histograms,
+timing diagnostics and available CPU profiles for each device count:
+
+```bash
+python plotting/plot_bridge_results.py \
+    --data-dir results/bridge_cpu_both \
+    --extra-diagnostic-pictures \
+    --output-dir figures/bridge_detailed
+```
+
+`--full-report` is an alias for `--extra-diagnostic-pictures`.
+
+To select particular device counts, add:
+
+```bash
+--devices 110 510 1000
+```
+
+If internal CPU-profile CSVs are available, select the cycles to plot
+with:
+
+```bash
+--profile-cycles 1 2 3
+```
+
+This requires `--extra-diagnostic-pictures`. Without an explicit cycle
+selection, the first three complete measured cycles are used.
+
+#### Outputs
+
+Both modes save:
 
 - `bridge_results.pdf`
 - `bridge_peak_analysis.pdf`
+- Individual PNG figures.
+- Summary CSVs and input/settings records.
 
-Individual PNGs, summary CSVs and input/settings records are saved in the
-same output folder. Add `--no-images` to save PDFs and tables without PNGs.
+The CPU-versus-N comparison is named:
+
+```text
+cpu_including_vs_excluding_sleep_vs_N.png
+cpu_including_vs_excluding_sleep_vs_N.pdf
+```
+
+Use `--no-images` to omit individual PNGs while retaining PDF reports.
+
+Use separate output folders for summary and detailed reports. Existing
+figures are not deleted automatically.
 
 #### Slow-cycle analysis
 
-A slow cycle defaults to more than **0.1 seconds above its run's median**.
-A separate plot counts cycles more than **0.5 seconds above the median**.
+A slow cycle defaults to more than 0.1 seconds above its run's median.
+Use `--slow-threshold` to change this threshold.
 
-Use `--slow-threshold` to change the first threshold. The timing breakdown
-assumes a one-second fixed polling delay; use `--poll-sleep` if that delay
-has changed.
+A separate figure counts cycles more than 0.5 seconds above the median.
 
-#### Within-cycle CPU profiles
+The timing breakdown assumes a one-second fixed polling sleep. Use
+`--poll-sleep` if that delay has changed.
 
-If the input folder also contains `bridge_cpu_profile_N<number>.csv`,
-the script adds CPU-profile pages to `bridge_results.pdf`.
-
-By default, it plots the first three complete measured cycles for each
-device count. To choose specific cycles:
-
-```bash
-python plotting/plot_bridge_results.py \
-    --data-dir results/bridge_cpu_profile \
-    --profile-cycles 1 2 3 \
-    --output-dir figures/bridge_cpu_profile
-```
-
-Each profile figure shows:
-
-- Whole-process CPU averages over their sampling intervals.
-- A timeline of polling-loop phases: sleep, requests, response parsing,
-  OPC UA node updates and bookkeeping.
-
-Dashed CPU intervals cross a cycle boundary and include time outside the
-displayed cycle. Phase timestamps provide context, not direct attribution
-of CPU usage to an operation. Warm-up and incomplete cycles are excluded
-from these plots.
-
-Individual profile images use names such as:
-
-```text
-cpu_profile_N10_cycle1.png
-```
-
-If no CPU-profile CSV is present, the standard bridge reports still work.
-Source measurements are never modified. Generated files with matching
-names are overwritten when the same output folder is reused.
 
 ### Ignition-only report
 

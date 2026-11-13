@@ -50,7 +50,20 @@ CSV_COLUMNS = [
     "mean_request_ms", "zmq_tx_payload_kB_s", "zmq_rx_payload_kB_s",
     "node_writes", "node_writes_per_s", "parse_total_ms", "update_total_ms",
     "request_median_ms", "request_p95_ms", "request_p99_ms",
+    "active_s", "cpu_active_percent",
 ]
+
+
+def cpu_snapshot(process):
+    """Return wall time and cumulative CPU time for all process threads."""
+    cpu_times = process.cpu_times()
+    return time.perf_counter(), cpu_times.user + cpu_times.system
+
+
+def cpu_usage(start, end):
+    """Calculate process CPU percentage over a pair of snapshots."""
+    elapsed = end[0] - start[0]
+    return 100 * (end[1] - start[1]) / elapsed
 
 
 class CpuProfiler:
@@ -497,14 +510,14 @@ def main():
                 if cpu_profile:
                     print("Saving CPU profile to:", profile_path)
                 process = psutil.Process()
-                process.cpu_percent(None)
                 count = 0
                 warmup_started = time.perf_counter()
                 warming_up = args.warmup > 0
 
                 while args.cycles == 0 or count < args.cycles:
                     metrics = reset_metrics()
-                    cycle_started = time.perf_counter()
+                    cycle_cpu_start = cpu_snapshot(process)
+                    cycle_started = cycle_cpu_start[0]
                     if cpu_profile:
                         cpu_profile.phase(
                             "sleep", 0 if warming_up else count + 1,
@@ -521,6 +534,7 @@ def main():
                             f"Ndevices: {len(devices)} ==="
                         )
 
+                    active_cpu_start = cpu_snapshot(process)
                     for device in devices:
                         if cpu_profile:
                             cpu_profile.phase("request")
@@ -545,12 +559,12 @@ def main():
                                     time.perf_counter() - update_started
                                 ) * 1000
 
+                    cpu_end = cpu_snapshot(process)
                     if cpu_profile:
                         cpu_profile.phase("bookkeeping")
                         cpu_profile.check()
                     if warming_up:
                         elapsed = time.perf_counter() - warmup_started
-                        process.cpu_percent(None)
 
                         if elapsed >= args.warmup:
                             warming_up = False
@@ -565,8 +579,10 @@ def main():
                             )
                         continue
 
-                    cycle_s = time.perf_counter() - cycle_started
-                    cpu = process.cpu_percent(None)
+                    cycle_s = cpu_end[0] - cycle_started
+                    active_s = cpu_end[0] - active_cpu_start[0]
+                    cpu = cpu_usage(cycle_cpu_start, cpu_end)
+                    cpu_active = cpu_usage(active_cpu_start, cpu_end)
                     ram_mb = process.memory_info().rss / 1_000_000
                     failures = (
                         metrics["timeouts"]
@@ -602,12 +618,14 @@ def main():
                         percentile(sorted_latencies, 50),
                         percentile(sorted_latencies, 95),
                         percentile(sorted_latencies, 99),
+                        round(active_s, 6), round(cpu_active, 2),
                     ])
                     csv_file.flush()
 
                     print(
                         f"Cycle {count}/{args.cycles}: "
-                        f"{cycle_s:.2f} s | CPU {cpu:.1f}% | "
+                        f"{cycle_s:.2f} s | CPU incl. sleep {cpu:.1f}% | "
+                        f"CPU excl. sleep {cpu_active:.1f}% | "
                         f"RAM {ram_mb:.1f} MB"
                     )
 

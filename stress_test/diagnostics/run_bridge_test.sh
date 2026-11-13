@@ -3,9 +3,8 @@ set -euo pipefail
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
-# Select the device counts to test.
-DEVICE_COUNTS=(110)
-
+# Override with, for example, DEVICE_COUNTS="10 110 210".
+read -r -a DEVICE_COUNTS <<< "${DEVICE_COUNTS:-1 10 110 210 310 410 510 610 710 810 910 1000}"
 CYCLES="${CYCLES:-300}"
 WARMUP="${WARMUP:-30}"  # Seconds.
 RESULTS_DIR="${RESULTS_DIR:-$PWD/results/bridge_only}"
@@ -13,7 +12,7 @@ PYTHON="${PYTHON:-$HOME/DSCS/opcua-env/bin/python}"
 
 mkdir -p -- "$RESULTS_DIR"
 
-# Check all output paths before starting.
+# Check every output path before starting the sequence.
 for n in "${DEVICE_COUNTS[@]}"; do
     if [[ -e "$RESULTS_DIR/bridge_N${n}.csv" ]]; then
         echo "Existing file: $RESULTS_DIR/bridge_N${n}.csv" >&2
