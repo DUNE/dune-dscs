@@ -386,6 +386,10 @@ def parse_arguments():
         help="Warm-up duration in seconds (default: 30).",
     )
     parser.add_argument(
+        "--poll-sleep", type=float, default=CYCLE_DELAY_S,
+        help="Polling pause in seconds (default: 1; 0: no pause).",
+    )
+    parser.add_argument(
         "--output-dir", type=Path, default=ROOT / "results",
         help="CSV directory (default: stress_test/results).",
     )
@@ -414,6 +418,9 @@ def parse_arguments():
         help="CPU profiling interval in seconds (default: 0.1).",
     )
     args = parser.parse_args()
+
+    if not math.isfinite(args.poll_sleep) or args.poll_sleep < 0:
+        parser.error("--poll-sleep must be finite and nonnegative")
 
     if (not math.isfinite(args.cpu_sample_interval)
             or args.cpu_sample_interval <= 0):
@@ -523,7 +530,8 @@ def main():
                             "sleep", 0 if warming_up else count + 1,
                             warming_up, event="cycle_start",
                         )
-                    time.sleep(CYCLE_DELAY_S)
+                    if args.poll_sleep > 0:
+                        time.sleep(args.poll_sleep)
 
                     if warming_up:
                         print(f"\n=== Warm-up; Ndevices: {len(devices)} ===")

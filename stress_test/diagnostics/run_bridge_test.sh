@@ -7,6 +7,7 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 read -r -a DEVICE_COUNTS <<< "${DEVICE_COUNTS:-1 10 110 210 310 410 510 610 710 810 910 1000}"
 CYCLES="${CYCLES:-300}"
 WARMUP="${WARMUP:-30}"  # Seconds.
+POLL_SLEEP="${POLL_SLEEP:-1}"  # Seconds; zero disables the polling pause.
 RESULTS_DIR="${RESULTS_DIR:-$PWD/results/bridge_only}"
 PYTHON="${PYTHON:-$HOME/DSCS/opcua-env/bin/python}"
 
@@ -28,6 +29,7 @@ for n in "${DEVICE_COUNTS[@]}"; do
         --devices "$n" \
         --cycles "$CYCLES" \
         --warmup "$WARMUP" \
+        --poll-sleep "$POLL_SLEEP" \
         --output-dir "$RESULTS_DIR"
 
     echo "Saved $RESULTS_DIR/bridge_N${n}.csv"
