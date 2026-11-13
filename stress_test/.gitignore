@@ -50,3 +50,6 @@ trial_with_ignition_script/
 ignition_test_control.json
 
 /.runtime/
+
+/results/
+/figures/
