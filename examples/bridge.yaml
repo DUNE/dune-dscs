@@ -1,0 +1,26 @@
+endpoint: opc.tcp://127.0.0.1:4840/dune/
+timeout: 2
+concurrency: 32
+devices:
+  - id: wib-001
+    kind: wib
+    endpoint: tcp://127.0.0.1:1234
+    variables:
+      TemperatureC: {source: sensors.ad7414_49_temp, type: Double, unit: degC}
+      Femb0On: {source: femb.femb_power.0, type: Boolean}
+  - id: daphne-001
+    kind: daphne
+    endpoint: tcp://127.0.0.1:40001
+    variables:
+      Threshold: {source: counters.snapshots.0.threshold, type: UInt32}
+      TestRegister: {source: test_register.value, type: UInt32}
+  - id: pdu-001
+    kind: pdu
+    endpoint: udp://127.0.0.1:1161
+    community: private
+    variables:
+      Outlet1On:
+        source: 1.3.6.1.4.1.13742.6.4.1.2.1.3.1.1
+        type: Boolean
+        values: {7: true, 8: false}
+      OutletCount: {source: 1.3.6.1.4.1.13742.6.3.2.2.1.4.1, type: UInt32}
