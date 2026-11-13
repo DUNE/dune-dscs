@@ -522,6 +522,109 @@ For isolated bridge measurements, disable the Gateway diagnostic timer
 and disconnect OPC UA clients that should not contribute to the load.
 The runner does not stop existing Gateway activity.
 
+
+### Polling sleep: enabled or disabled
+
+The bridge pauses for one second before each polling round by default.
+Set `POLL_SLEEP=0` to run the bridge stress-test sequence without this
+fixed pause.
+
+#### Full device-count sweep without sleep
+
+```bash
+cd ~/dune-dscs/stress_test
+source ~/DSCS/opcua-env/bin/activate
+
+POLL_SLEEP=0 CYCLES=300 WARMUP=30 \
+RESULTS_DIR=results/bridge_no_sleep \
+bash diagnostics/run_bridge_test.sh
+```
+
+The default sequence tests:
+
+```text
+1, 10, 110, 210, 310, 410, 510, 610, 710, 810, 910, 1000 devices
+```
+
+Each configuration has 30 seconds of warm-up followed by 300 measured
+cycles. Check that the required emulators are running before starting.
+
+To select different device counts:
+
+```bash
+DEVICE_COUNTS="10 110 510 1000" \
+POLL_SLEEP=0 CYCLES=300 WARMUP=30 \
+RESULTS_DIR=results/bridge_no_sleep_selected \
+bash diagnostics/run_bridge_test.sh
+```
+
+#### Plot the results
+
+Pass the same polling-sleep duration to the plotting script:
+
+```bash
+python plotting/plot_bridge_results.py \
+    --data-dir results/bridge_no_sleep \
+    --poll-sleep 0 \
+    --output-dir figures/bridge_no_sleep
+```
+
+This generates the summary plots versus N. Add
+`--extra-diagnostic-pictures` to include individual cycle profiles and
+diagnostics for each device count.
+
+The plotting option affects the timing breakdown; it does not change
+the recorded CPU measurements.
+
+#### Restore the default sleep
+
+Use `POLL_SLEEP=1`, or omit the variable:
+
+```bash
+POLL_SLEEP=1 CYCLES=300 WARMUP=30 \
+RESULTS_DIR=results/bridge_with_sleep \
+bash diagnostics/run_bridge_test.sh
+```
+
+Plot these results with `--poll-sleep 1`, which is also the plotting
+default.
+
+#### Run one device count directly
+
+For a direct bridge invocation, use the command-line option:
+
+```bash
+python bridge/ignition_pybridge_diagnostic.py \
+    --devices 900 \
+    --cycles 300 \
+    --warmup 30 \
+    --poll-sleep 0 \
+    --output-dir results/bridge_900_no_sleep
+```
+
+`--poll-sleep` defaults to `1` second.
+
+#### Interpretation
+
+Removing the fixed pause changes the polling workload: the bridge
+starts the next polling round sooner. Waiting for emulator responses
+and request timeouts still occurs.
+
+Both CPU measurements remain recorded:
+
+- `cpu_percent`: CPU usage over the complete cycle.
+- `cpu_active_percent`: CPU usage during requests, parsing and node
+  updates, excluding the fixed polling pause.
+
+Without the pause, these averages should become similar. Small
+differences can remain because their measurement windows differ.
+
+Keep sleep and no-sleep experiments in separate results folders.
+Existing bridge CSVs are never overwritten.
+
+`POLL_SLEEP` currently applies to `diagnostics/run_bridge_test.sh`;
+the other test runners do not forward this setting.
+
 ### Bridge and emulator-resource sequence
 
 ```bash

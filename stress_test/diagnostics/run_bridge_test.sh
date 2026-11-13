@@ -4,7 +4,7 @@ set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 # Override with, for example, DEVICE_COUNTS="10 110 210".
-read -r -a DEVICE_COUNTS <<< "${DEVICE_COUNTS:-1 10 110 210 310 410 510 610 710 810 910 1000}"
+read -r -a DEVICE_COUNTS <<< "${DEVICE_COUNTS:-10 110 210 310 410 510 610 710 810 910 1000}"
 CYCLES="${CYCLES:-300}"
 WARMUP="${WARMUP:-30}"  # Seconds.
 POLL_SLEEP="${POLL_SLEEP:-1}"  # Seconds; zero disables the polling pause.
