@@ -1144,6 +1144,38 @@ individual PNGs, `summary.csv` and `plot_settings.json`. Figures include:
 - Per-N mean/P95 bars, CPU distributions and memory traces.
 - Diagnostic collection-time and tag-quality comparisons when available.
 
+### Endurance analysis
+
+Analyse a fixed-device-count endurance experiment with:
+
+```bash
+python plotting/analyze_endurance.py \
+    --data-dir results/endurance_cached \
+    --output-dir figures/endurance_cached
+```
+
+Required inputs are one `bridge_N<number>.csv`,
+`ignition_resources.csv` and `ignition_tag_diagnostics.csv`.
+The script also reads `experiment.log` and `test_settings.json` when
+present. It never modifies the input measurements.
+
+It saves only three files:
+
+- `endurance_report.pdf`: three pages showing timing/errors, process
+  resources, and Ignition tag health/connection state.
+- `endurance_summary.csv`: whole-run, initial/final-window and
+  health-separated resource and timing statistics.
+- `endurance_summary.txt`: run details, communication totals,
+  sampled health transitions, controller events and final error context.
+
+Records after the last saved bridge cycle are excluded from the plots
+and statistics. The first health loss is bracketed by the last healthy
+and first unhealthy tag snapshots. Gaps between snapshots remain a
+limitation: this analysis does not establish continuous health or
+freshness. Bad-tag counts alone cannot identify trial expiry or another
+specific cause. Bridge exit information is reported separately from
+the loss of tag health.
+
 ### Plot options and scope
 
 All four plotting scripts accept `--output-dir`, `--devices`, `--no-images`
