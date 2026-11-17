@@ -24,7 +24,7 @@ jobs:
 
       - name: Run ruff
         run: |
-          uv run ruff check src tests --extend-exclude '*_pb2.py'
+          uv run ruff check src tests
 
       - name: Run unit tests
-        run: uv run python -m unittest discover -s tests -v
+        run: uv run pytest
