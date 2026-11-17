@@ -1,17 +1,16 @@
 # dune-dscs
 
-Run the [PDU, DAPHNE and WIB emulators](emulator.md) with the existing Python environment.
-Use the [OPC UA bridge](bridge.md) for one technology or a mixed fleet.
-
 The dune-dscs repository is the top-level repository for the Detector Slow Controls System.
 Initially, it will contain code for bridges and emulators, but these may be refactored into other repositories in the future.
 The DSCS code wiki will be hosted at this repository, and the DUNE wiki will be used for internal information.
 
 ## Setup
 
-If you encounter problems with the setup instructions below, please file an [issue](https://github.com/DUNE/dune-dscs/issues) with enough detail to reproduce your error from scratch.
-
-To make the python virtual environment consistent, we recommend using [uv](https://docs.astral.sh/uv/). To install uv without root on Linux or MacOS:
+To make the python virtual environment consistent, we recommend using [uv](https://docs.astral.sh/uv/). If you have access to `/cvmfs/dune.opensciencegrid.org`, you can run
+```bash
+source /cvmfs/dune.opensciencegrid.org/dscs/setup_dscs.sh
+```
+to set up `uv` in your current shell. Otherwise, to install uv without root on Linux or MacOS:
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
@@ -27,8 +26,8 @@ After installing uv, you may need to open a new shell to use it. Test with `uv -
 
 ```bash
 git clone https://github.com/DUNE/dune-dscs.git && cd dune-dscs
-uv sync                                              # creates .venv
-uv run python Tutorials/workshop2026/zmq_emulator.py # Or whatever script you want
+uv sync                                   # creates .venv
+uv run python -m dune_dscs.emulator wib   # Example of starting the WIB emulator
 ```
 
 ### Without uv
@@ -40,8 +39,9 @@ Use uv if you cannot install a suitable Python version yourself.
 git clone https://github.com/DUNE/dune-dscs.git && cd dune-dscs
 python -m venv .venv
 source .venv/bin/activate         # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python Tutorials/workshop2026/zmq_emulator.py # Or whatever script you want
+pip install -r requirements.txt   # Install dependencies
+pip install -e .                  # Install dune_dscs itself
+python -m dune_dscs.emulator wib  # Example of starting the WIB emulator
 ```
 
 ### Updating dependencies (maintainers)
@@ -52,14 +52,14 @@ uv export --frozen --no-hashes --no-dev --no-emit-project -o requirements.txt
 # commit pyproject.toml, uv.lock and requirements.txt together
 ```
 
-## Coding Style 
+## Running the Bridge and Emulators
 
-Python code should follow PEP 8 conventions.
+Run the [PDU, DAPHNE and WIB emulators](emulator.md) with the existing Python environment.
+Use the [OPC UA bridge](bridge.md) for one technology or a mixed fleet.
 
-https://peps.python.org/pep-0008/
+## Contributing
 
-Pull requests run Ruff on maintained Python code. Archived scripts and generated
-protobuf bindings are excluded. The WIB binding requires protobuf 7.36.2 or newer.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Copyright and Licensing
 Copyright © 2026 FERMI NATIONAL ACCELERATOR LABORATORY for the benefit of the DUNE Collaboration.
