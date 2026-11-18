@@ -670,6 +670,51 @@ running. Errors appear in the terminal; no separate `.err` files are
 created. The runner protects existing files and does not resume partial
 runs. Choose another `RESULTS_DIR` for an independent experiment.
 
+### Investigating intermittent emulator timeouts
+
+Use `diagnostics/check_emulator_latency.py` to compare fresh ZeroMQ
+connections with reused connections.
+
+Run on the bridge computer with the bridge stopped. Leave the
+emulators running.
+
+```bash
+cd ~/dune-dscs/stress_test
+source ~/DSCS/opcua-env/bin/activate
+
+python diagnostics/check_emulator_latency.py \
+    --samples 1000 \
+    --output results/emulator_latency_check.csv
+```
+
+The probe checks Weber06 and Weber12 on ports 5564 and 5610, with
+Weber03:5564 as a control. Edit `TARGETS` to test other endpoints.
+
+`--samples` specifies requests per endpoint per connection mode.
+The default produces 10,000 requests in total. A progress bar shows
+completion and estimated remaining time.
+
+The receive timeout defaults to three seconds. Valid replies taking
+longer than one second are marked `late_reply`. This does not change
+the bridge's timeout.
+
+One CSV records the endpoint, connection mode, request duration and
+result. Existing files are never overwritten.
+
+Interpretation:
+
+- Delays mainly with fresh connections suggest investigating
+  connection setup or socket lifecycle.
+- Delays with both modes on the same endpoints suggest investigating
+  those hosts, emulators or network paths.
+- No reproduced failures does not rule out rare delays.
+
+These results provide clues, not a confirmed cause. The probe runs
+separately from the bridge stress workload.
+
+For a longer repeat, use `--samples 10000` and another output filename.
+
+
 ## Ignition Gateway setup
 
 The Ignition runner measures the local Gateway Java process. Run it on
