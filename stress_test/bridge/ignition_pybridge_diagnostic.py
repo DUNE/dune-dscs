@@ -523,16 +523,6 @@ def main():
 
                 while args.cycles == 0 or count < args.cycles:
                     metrics = reset_metrics()
-                    cycle_cpu_start = cpu_snapshot(process)
-                    cycle_started = cycle_cpu_start[0]
-                    if cpu_profile:
-                        cpu_profile.phase(
-                            "sleep", 0 if warming_up else count + 1,
-                            warming_up, event="cycle_start",
-                        )
-                    if args.poll_sleep > 0:
-                        time.sleep(args.poll_sleep)
-
                     if warming_up:
                         print(f"\n=== Warm-up; Ndevices: {len(devices)} ===")
                     else:
@@ -541,8 +531,20 @@ def main():
                             f"\n=== cycle {count}/{args.cycles}; "
                             f"Ndevices: {len(devices)} ==="
                         )
+                    cycle_cpu_start = cpu_snapshot(process)
+                    cycle_started = cycle_cpu_start[0]
+                    if cpu_profile:
+                        cpu_profile.phase(
+                            "sleep", 0 if warming_up else count,
+                            warming_up, event="cycle_start",
+                        )
+                    if args.poll_sleep > 0:
+                        time.sleep(args.poll_sleep)
 
-                    active_cpu_start = cpu_snapshot(process)
+                    active_cpu_start = (
+                        cpu_snapshot(process) if args.poll_sleep > 0
+                        else cycle_cpu_start
+                    )                    
                     for device in devices:
                         if cpu_profile:
                             cpu_profile.phase("request")
