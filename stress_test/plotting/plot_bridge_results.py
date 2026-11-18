@@ -630,8 +630,18 @@ def plot_bridge_results(datasets, summary, runs, args):
 
         save_plot(fig, "processing_combined_vs_N", pdf, args)
 
-        # Compact totals are easier to use on slides than three separate pages.
-        fig, axes = plt.subplots(1, 3, figsize=(11, 3.2), sharey=True)
+        fig, axes = plt.subplots(
+            1, 3, figsize=(11, 3.2), sharey=True
+        )
+
+        error_columns = [
+            "timeouts_total",
+            "send_errors_total",
+            "other_errors_total",
+        ]
+        maximum = runs[error_columns].max().max()
+        upper = max(1, maximum) * 1.15 if pd.notna(maximum) else 1
+
         for ax, column, title in [
             (axes[0], "timeouts_total", "Receive timeouts"),
             (axes[1], "send_errors_total", "Send errors"),
@@ -639,38 +649,82 @@ def plot_bridge_results(datasets, summary, runs, args):
         ]:
             add_line(ax, runs["N"], runs[column], title, BLUE)
             ax.set_title(title)
-            ax.set_ylim(bottom=0)
-            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+            ax.yaxis.set_major_locator(
+                MaxNLocator(integer=True)
+            )
             style_axis(ax, versus_n=True)
-            values = runs[column].dropna()
-            if len(values) == len(runs) and values.eq(0).all():
-                ax.set_ylim(-0.05, 1)
-                ax.text(0.5, 0.55, "0 recorded", transform=ax.transAxes,
-                        ha="center", fontsize=15, fontweight="bold")
-            elif values.empty:
-                ax.text(0.5, 0.55, "Not measured", transform=ax.transAxes,
-                        ha="center", fontsize=13)
-        axes[0].set_ylabel("Total events per run")
-        save_plot(fig, "bridge_errors_vs_N_compact", pdf, args,
-                  "Totals over analysed cycles for each device count.")
 
-        for item in datasets if args.extra_diagnostic_pictures else []:
+            values = runs[column].dropna()
+
+            if len(values) == len(runs) and values.eq(0).all():
+                ax.text(
+                    0.5, 0.55,
+                    "0 recorded",
+                    transform=ax.transAxes,
+                    ha="center",
+                    fontsize=15,
+                    fontweight="bold",
+                )
+            elif values.empty:
+                ax.text(
+                    0.5, 0.55,
+                    "Not measured",
+                    transform=ax.transAxes,
+                    ha="center",
+                    fontsize=13,
+                )
+
+        # Set the shared scale once, using all three error categories.
+        axes[0].set_ylim(-0.05, upper)
+        axes[0].set_ylabel("Total events per run")
+
+        save_plot(
+            fig,
+            "bridge_errors_vs_N_compact",
+            pdf,
+            args,
+            "Totals over analysed cycles for each device count.",
+        )
+
+        for item in (
+            datasets if args.extra_diagnostic_pictures else []
+        ):
             data = item["data"]
             required = {"update_total_ms", "cpu_percent"}
+
             if not required.issubset(data.columns):
                 continue
+
             selected = data.dropna(subset=list(required))
             if selected.empty:
                 continue
+
             fig, ax = plt.subplots(figsize=(7, 5))
-            ax.scatter(selected["update_total_ms"], selected["cpu_percent"],
-                       s=20, alpha=0.6, color=BLUE)
-            ax.set(title=f"Bridge CPU and node-update time | N = {item['N']}",
-                   xlabel="Total OPC UA node-update time per cycle (ms)",
-                   ylabel="Bridge process CPU usage (%)")
+
+            ax.scatter(
+                selected["update_total_ms"],
+                selected["cpu_percent"],
+                s=20,
+                alpha=0.6,
+                color=BLUE,
+            )
+            ax.set(
+                title=(
+                    "Bridge CPU and node-update time "
+                    f"| N = {item['N']}"
+                ),
+                xlabel="Total OPC UA node-update time per cycle (ms)",
+                ylabel="Bridge process CPU usage (%)",
+            )
             style_axis(ax)
-            save_plot(fig, f"cpu_vs_node_update_N{item['N']}", pdf, args,
-                      "Each point represents one analysed polling cycle.")
+
+            save_plot(
+                fig,
+                f"cpu_vs_node_update_N{item['N']}",
+                pdf,
+                args,
+                "Each point represents one analysed polling cycle.",
+            )
 
         if args.extra_diagnostic_pictures:
             plot_cpu_profiles(datasets, pdf, args)
