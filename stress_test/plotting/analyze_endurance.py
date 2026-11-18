@@ -19,19 +19,27 @@ COLORS = ["#2563eb", "#d97706", "#059669"]
 
 def read_csv(path, required, numeric):
     """Validate required columns and UTC times; preserve missing readings."""
-    data = pd.read_csv(path)
+    data = pd.read_csv(path, engine="python")
     missing = set(required) - set(data.columns)
     if missing:
         raise ValueError(f"{path.name}: missing {sorted(missing)}")
+    timestamps = data["time_utc"].astype("string")
+    cleaned = timestamps.str.lstrip("\x00")
+    repaired = int(timestamps.ne(cleaned).fillna(False).sum())
+    if repaired:
+        print(f"WARNING: {path.name}: removed leading NUL bytes from "
+              f"{repaired} timestamps in memory; original CSV unchanged.")
     data["time_utc"] = pd.to_datetime(
-        data["time_utc"], utc=True, format="ISO8601", errors="coerce",
+        cleaned, utc=True, format="ISO8601", errors="coerce",
     )
     if data["time_utc"].isna().any():
         raise ValueError(f"{path.name}: invalid timestamps")
     for column in numeric:
         if column in data:
             data[column] = pd.to_numeric(data[column], errors="coerce")
-    return data.replace([np.inf, -np.inf], np.nan).sort_values("time_utc")
+    data = data.replace([np.inf, -np.inf], np.nan).sort_values("time_utc")
+    data.attrs["nul_timestamp_repairs"] = repaired
+    return data
 
 
 def read_log(path):
@@ -96,9 +104,9 @@ def summary_rows(bridge, resources, start, end, first_good, failure):
                 })
     return pd.DataFrame(rows)
 
-
 def make_report(bridge, resources, tags, origin, failure, output, n):
-    """Save three pages; traces retain recorded values without smoothing."""
+    """Save three report pages without smoothing recorded measurements."""
+
     def hours(data):
         return (data["time_utc"] - origin).dt.total_seconds() / 3600
 
@@ -107,67 +115,194 @@ def make_report(bridge, resources, tags, origin, failure, output, n):
             ax.set_xlabel("Hours since first measured bridge cycle")
             ax.grid(axis="y", alpha=0.2)
             ax.spines[["top", "right"]].set_visible(False)
+
             if failure is not None:
-                ax.axvline((failure - origin).total_seconds() / 3600,
-                           color="#dc2626", linestyle="--", linewidth=1,
-                           label="First unhealthy tag snapshot")
-            ax.legend(fontsize=9, loc="best", frameon=False)
-        fig.tight_layout()
+                ax.axvline(
+                    (failure - origin).total_seconds() / 3600,
+                    color="#dc2626",
+                    linestyle="--",
+                    linewidth=1,
+                    label="First unhealthy tag snapshot",
+                )
+
+            handles, labels = ax.get_legend_handles_labels()
+            if handles:
+                ax.legend(
+                    fontsize=9,
+                    loc="best",
+                    frameon=False,
+                )
+
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
         pdf.savefig(fig)
         plt.close(fig)
 
     with PdfPages(output) as pdf:
-        fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
-        fig.suptitle(f"Endurance: bridge timing and errors | N = {n}")
-        axes[0].plot(hours(bridge), bridge["cycle_s"], color=COLORS[0],
-                     linewidth=0.6, label="Recorded cycle duration")
+        # Page 1: bridge timing and communication errors.
+        fig, axes = plt.subplots(
+            2, 1, figsize=(11, 7), sharex=True
+        )
+        fig.suptitle(
+            f"Endurance: bridge timing and errors | N = {n}"
+        )
+
+        axes[0].plot(
+            hours(bridge),
+            bridge["cycle_s"],
+            color=COLORS[0],
+            linewidth=0.6,
+            label="Recorded cycle duration",
+        )
         axes[0].set_ylabel("Cycle duration (s)")
+
         for column, color in zip(
-            ("timeouts", "send_errors", "other_errors"), COLORS,
+            ("timeouts", "send_errors", "other_errors"),
+            COLORS,
         ):
-            axes[1].plot(hours(bridge), bridge[column].cumsum(),
-                         color=color, linewidth=1.4, label=column)
+            axes[1].plot(
+                hours(bridge),
+                bridge[column].cumsum(),
+                color=color,
+                linewidth=1.4,
+                label=column.replace("_", " ").capitalize(),
+            )
+
         axes[1].set_ylabel("Cumulative request errors")
         finish(fig, axes, pdf)
 
-        fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
-        fig.suptitle(f"Endurance: process resources | N = {n}")
-        axes[0].plot(hours(bridge), bridge["cpu_percent"],
-                     linewidth=0.6, color=COLORS[0],
-                     label="Bridge: full-cycle CPU average")
+        # Page 2: CPU and separate RAM panels.
+        fig, axes = plt.subplots(
+            3, 1, figsize=(11, 9), sharex=True
+        )
+        fig.suptitle(
+            f"Endurance: process resources | N = {n}"
+        )
+
+        axes[0].plot(
+            hours(bridge),
+            bridge["cpu_percent"],
+            linewidth=0.6,
+            color=COLORS[0],
+            label="Bridge: full-cycle CPU average",
+        )
+
         if "cpu_active_percent" in bridge:
-            axes[0].plot(hours(bridge), bridge["cpu_active_percent"],
-                         linewidth=0.6, color=COLORS[2],
-                         label="Bridge: active-window CPU average")
+            axes[0].plot(
+                hours(bridge),
+                bridge["cpu_active_percent"],
+                linewidth=0.6,
+                color=COLORS[2],
+                label="Bridge: active-window CPU average",
+            )
+
         if not resources.empty:
-            axes[0].plot(hours(resources), resources["cpu_percent"],
-                         linewidth=0.5, color=COLORS[1], alpha=0.7,
-                         label="Ignition: external interval CPU average")
-            axes[1].plot(hours(resources), resources["rss_mb"],
-                         color=COLORS[1], label="Ignition RSS")
-        axes[0].set_ylabel("Process CPU (%)\n100% = one logical CPU")
-        axes[1].plot(hours(bridge), bridge["ram_mb"],
-                     color=COLORS[0], label="Bridge RSS")
-        axes[1].set_ylabel("Resident memory (MB)")
+            axes[0].plot(
+                hours(resources),
+                resources["cpu_percent"],
+                linewidth=0.5,
+                color=COLORS[1],
+                alpha=0.7,
+                label="Ignition: external interval CPU average",
+            )
+
+        axes[0].set_ylabel(
+            "Process CPU (%)\n100% = one logical CPU"
+        )
+
+        axes[1].plot(
+            hours(bridge),
+            bridge["ram_mb"],
+            color=COLORS[0],
+            linewidth=1,
+            label="Bridge RSS",
+        )
+        axes[1].set(
+            title="Bridge RAM — independent scale",
+            ylabel="Resident memory (MB)",
+        )
+
+        if not resources.empty:
+            axes[2].plot(
+                hours(resources),
+                resources["rss_mb"],
+                color=COLORS[1],
+                linewidth=1,
+                label="Ignition RSS",
+            )
+        else:
+            axes[2].text(
+                0.5,
+                0.5,
+                "No Ignition resource samples",
+                transform=axes[2].transAxes,
+                ha="center",
+                va="center",
+            )
+
+        axes[2].set(
+            title="Ignition RAM — independent scale",
+            ylabel="Resident memory (MB)",
+        )
+
+        for ax in axes[1:]:
+            ax.ticklabel_format(
+                axis="y",
+                style="plain",
+                useOffset=False,
+            )
+
         finish(fig, axes, pdf)
 
-        fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
-        fig.suptitle(f"Endurance: sampled Ignition tag health | N = {n}")
-        for column, color in zip(
-            ("good_tags", "uncertain_tags", "bad_tags"),
-            (COLORS[2], COLORS[1], "#dc2626"),
+        # Page 3: sampled tag quality and OPC connection state.
+        fig, axes = plt.subplots(
+            2, 1, figsize=(11, 7), sharex=True
+        )
+        fig.suptitle(
+            f"Endurance: sampled Ignition tag health | N = {n}"
+        )
+
+        for column, label, color in (
+            ("good_tags", "Good tags", COLORS[2]),
+            ("uncertain_tags", "Uncertain tags", COLORS[1]),
+            ("bad_tags", "Bad/error tags", "#dc2626"),
         ):
-            axes[0].plot(hours(tags),
-                         100 * tags[column] / tags["expected_tags"],
-                         color=color, linewidth=1, label=column)
-        axes[0].set(ylabel="Tags (%)", ylim=(-2, 102))
-        connected = tags["connection_state"].eq("CONNECTED").astype(int)
-        axes[1].plot(hours(tags), connected, marker=".", markersize=2,
-                     linewidth=0.6, label="Recorded connection state")
-        axes[1].set_yticks([0, 1], ["Other", "Connected"])
-        axes[1].set_ylim(-0.1, 1.1)
-        finish(fig, axes, pdf)
+            axes[0].plot(
+                hours(tags),
+                100 * tags[column] / tags["expected_tags"],
+                color=color,
+                linewidth=1,
+                label=label,
+            )
 
+        axes[0].set(
+            ylabel="Tags (%)",
+            ylim=(-2, 102),
+        )
+
+        connected = (
+            tags["connection_state"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .eq("CONNECTED")
+            .astype(int)
+        )
+
+        axes[1].plot(
+            hours(tags),
+            connected,
+            marker=".",
+            markersize=2,
+            linewidth=0.6,
+            label="Recorded connection state",
+        )
+        axes[1].set_yticks(
+            [0, 1],
+            ["Other", "Connected"],
+        )
+        axes[1].set_ylim(-0.1, 1.1)
+
+        finish(fig, axes, pdf)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -213,6 +348,13 @@ def main():
         folder / "ignition_tag_diagnostics.csv",
         ["time_utc", "run_id", "connection_state", *tag_fields], tag_fields,
     )
+    cleanup_notes = [
+        f"{label}: {frame.attrs.get('nul_timestamp_repairs', 0)} "
+        "timestamps cleaned of leading NUL bytes in memory"
+        for label, frame in [(files[0].name, bridge),
+                             ("ignition_resources.csv", resources),
+                             ("ignition_tag_diagnostics.csv", tags)]
+    ]
     excluded_tags = int(tags["time_utc"].ge(end).sum())
     tags = tags.loc[tags["N"].eq(n) & tags["time_utc"].lt(end)].copy()
     if tags.empty or tags["run_id"].nunique() != 1:
@@ -269,6 +411,7 @@ def main():
     if settings_path.exists():
         lines += ["", "Saved settings:", settings_path.read_text()]
     lines += ["", "Controller events (not an inferred failure cause):"]
+    lines += cleanup_notes
     lines += [f"{stamp} | {seconds:.1f} s | {message}"
               for stamp, seconds, message in events]
     lines += ["", "Last error contexts from experiment.log:"] + errors
