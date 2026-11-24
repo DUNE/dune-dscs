@@ -80,7 +80,7 @@ done
 
 echo "started ${#pids[@]} $KIND emulators on $HOST:$FIRST-$LAST (logs in $LOGDIR/), Ctrl-C to stop"
 if [ -n "$MAKE_BRIDGE_CONFIG" ]; then
-    echo "start the bridge in another terminal with:"
+    echo "Brdige config created. Start the bridge in another terminal with:"
     echo "  uv run python -m dune_dscs.bridge $MAKE_BRIDGE_CONFIG"
 fi
 wait 2>/dev/null
