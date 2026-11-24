@@ -7,7 +7,8 @@
 # environment:
 #   KIND=wib|daphne|pdu  device type (default wib)
 #   HOST=127.0.0.1       bind address; 0.0.0.0 to accept other machines
-#   LOGDIR=logs          one log per emulator: $LOGDIR/<kind>_<port>.log
+#   LOGDIR=<dir>         one log per emulator: $LOGDIR/<kind>_<port>.log
+#                        (default: logs/ at the repository root)
 #   EXTRA="--vary"       extra emulator options, e.g. "--vary --vary-period 30"
 #
 # examples:
@@ -22,15 +23,23 @@ FIRST=${1:-1234}
 LAST=${2:-$FIRST}
 [ $# -eq 0 ] && LAST=1243
 HOST=${HOST:-127.0.0.1}
-LOGDIR=${LOGDIR:-logs}
+LOGDIR=${LOGDIR:-}
 EXTRA=${EXTRA:-}
 
 case "$KIND" in wib|daphne|pdu) ;; *) echo "KIND must be wib, daphne or pdu" >&2; exit 1 ;; esac
 if [ "$FIRST" -gt "$LAST" ]; then echo "FIRST_PORT must be <= LAST_PORT" >&2; exit 1; fi
 
+# A LOGDIR given by the caller is relative to where they ran the script.
+case "$LOGDIR" in
+    "") ;;
+    /*) ;;
+    *) LOGDIR="$PWD/$LOGDIR" ;;
+esac
+
 # Run from the repository root so uv finds the project, wherever we are called from.
 cd "$(dirname "$0")/../.." || exit 1
-mkdir -p "$LOGDIR"
+LOGDIR=${LOGDIR:-$PWD/logs}  # default: logs/ at the repository root
+mkdir -p "$LOGDIR" || exit 1
 
 # Sync once, then call the venv's python directly: much faster than
 # `uv run` per emulator when starting many of them.
@@ -54,4 +63,4 @@ for ((p = FIRST; p <= LAST; p++)); do
 done
 
 echo "started ${#pids[@]} $KIND emulators on $HOST:$FIRST-$LAST (logs in $LOGDIR/), Ctrl-C to stop"
-wait
+wait 2>/dev/null
