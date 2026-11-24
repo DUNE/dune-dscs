@@ -1,0 +1,12 @@
+wib:
+  - tpc: 0
+<<<<<<<< HEAD:archive/bridge/wibs.yaml
+    wib: 1
+    host: "iceberg01"
+========
+    ID_n: 1
+    host: localhost
+>>>>>>>> origin/bridge_development:archive/bridge/zmq_devices.yaml
+    port: 5555
+
+    

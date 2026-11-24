@@ -1,5 +1,0 @@
-wibs:
-  - tpc: 0
-    wib: 1
-    host: "iceberg01"
-    port: 5555
