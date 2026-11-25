@@ -1,0 +1,13 @@
+# Emulator hosts, in device order (device i -> host i % H, port BASE_PORT + i // H).
+# Same order as the old diagnostic bridge. Weber08 was excluded there too.
+# name     address
+Weber02    134.93.130.214
+Weber03    134.93.131.35
+Weber06    134.93.128.228
+Weber07    134.93.128.229
+Weber09    134.93.128.243
+Weber10    134.93.129.24
+Weber11    134.93.129.16
+Weber12    134.93.131.161
+Weber13    134.93.129.22
+Weber14    134.93.129.26
