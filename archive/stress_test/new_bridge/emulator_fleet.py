@@ -3,7 +3,7 @@
 
 One emulator process per port (default 100 ports from 5555), bound to 0.0.0.0
 so the bridge host can reach them. PIDs are recorded in
-stress_test/.runtime/dscs_<host>.jsonl; stop only kills processes whose PID,
+archive/stress_test/.runtime/dscs_<host>.jsonl; stop only kills processes whose PID,
 start time and command line still match that record.
 
     python emulator_fleet.py start [--count 100] [--base-port 5555] [--timing FILE]
@@ -24,7 +24,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]          # stress_test/
+ROOT = Path(__file__).resolve().parents[1]          # archive/stress_test/
 RUNTIME = ROOT / ".runtime"
 HOST = socket.gethostname().split(".")[0]
 STATE = RUNTIME / f"dscs_{HOST}.jsonl"

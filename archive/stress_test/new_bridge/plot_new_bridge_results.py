@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plot new-bridge diagnostics versus N (adapted plotting/plot_bridge_results.py).
 
-Run from stress_test with the plotting environment:
+Run from archive/stress_test with the plotting environment:
     ~/DSCS/opcua-env/bin/python new_bridge/plot_new_bridge_results.py \
         --data-dir results/new_bridge_scaling [--compare-dir results/bridge_only]
 

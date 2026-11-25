@@ -8,6 +8,10 @@ This is a repeat of the old bridge-only stress test (`diagnostics/run_bridge_tes
 - **Bridge:** `dune_dscs.bridge.Bridge`, unchanged. It uses the WIB device from
   `examples/bridge-varying.yaml`: 14 variables, period 5 s, timeout 10 s, concurrency 32.
 
+The scripts live in `archive/stress_test/new_bridge/` and are run from `~/dune-dscs/archive/stress_test`.
+Their output goes to `archive/stress_test/results/`, `figures/` and `.runtime/`, which git
+ignores. Old-bridge results stay in `~/dune-dscs/stress_test/results/`, outside git.
+
 These scripts need the branch with `src/dune_dscs` checked out (`mainz-test-stand/develop`).
 Don't switch branches while emulators or the bridge are running.
 
@@ -42,7 +46,7 @@ Repeat these steps on **every** host in `hosts.txt`: Weber02, 03, 06, 07, 09, 10
 
 ```bash
 ssh etapweberXX            # or log in at the machine
-cd ~/dune-dscs/stress_test
+cd ~/dune-dscs/archive/stress_test
 git -C ~/dune-dscs branch --show-current     # must be mainz-test-stand/develop
 ```
 
@@ -66,7 +70,7 @@ with `ss -ltnp | grep 5555`.
 
 The output should be `etapweberXX: 100 WIB emulators running on ports 5555-5654.`
 The emulators keep running after you log out. Each one writes a log to
-`stress_test/.runtime/dscs_emulator_logs/<host>/wib_<port>.log`.
+`archive/stress_test/.runtime/dscs_emulator_logs/<host>/wib_<port>.log`.
 
 **c) Check on that host.**
 
@@ -86,7 +90,7 @@ start|status|stop` does step b, c or the stop on all hosts at once. It does not 
 
 ## 2. Verification procedure (run on the bridge host)
 
-Run every step from `~/dune-dscs/stress_test` on the host that will run the bridge.
+Run every step from `~/dune-dscs/archive/stress_test` on the host that will run the bridge.
 Don't start the full test until all steps pass.
 
 **Step 1. All emulators answer with the new protocol.**
@@ -157,7 +161,7 @@ A single N can run until you press Ctrl-C (endurance):
 
 ```bash
 ~/DSCS/opcua-env/bin/python new_bridge/plot_new_bridge_results.py \
-    --data-dir results/new_bridge_scaling --compare-dir results/bridge_no_sleep
+    --data-dir results/new_bridge_scaling --compare-dir ~/dune-dscs/stress_test/results/bridge_no_sleep
 ```
 
 The report goes to `figures/new_bridge_scaling/`: `bridge_results.pdf`, PNGs and summary CSVs.

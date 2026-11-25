@@ -45,8 +45,8 @@ from dune_dscs.bridge_clients import BoardClient
 from dune_dscs.metrics import ProcessSampler
 
 HERE = Path(__file__).resolve().parent
-STRESS = HERE.parent
-REPO = STRESS.parent
+STRESS = HERE.parent                # archive/stress_test/: results go here
+REPO = HERE.parents[2]              # repository root
 DEFAULT_TEMPLATE = REPO / "examples" / "bridge-varying.yaml"
 DECODE_ERRORS = (ValueError, TypeError, LookupError, AttributeError, DecodeError)
 
