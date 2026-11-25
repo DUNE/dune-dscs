@@ -27,15 +27,20 @@ TARGETS = [
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--samples", type=int, default=1000,
-                        help="Requests per endpoint per connection mode")
+    parser.add_argument("--rounds", "--samples", dest="rounds",
+                        type=int, default=300,
+                        help="Rounds; each checks all endpoints in both modes")
+    parser.add_argument("--period", type=float, default=3,
+                        help="Minimum seconds between round starts")
     parser.add_argument("--timeout", type=float, default=3,
                         help="Receive timeout in seconds (default: 3)")
     parser.add_argument("--output", type=Path,
                         default=ROOT / "results" / "emulator_latency.csv")
     args = parser.parse_args()
-    if args.samples < 1 or not math.isfinite(args.timeout) or args.timeout < 1:
-        parser.error("Use positive samples and a timeout of at least 1 s")
+    if args.rounds < 1 or not math.isfinite(args.timeout) or args.timeout < 1:
+        parser.error("Use positive rounds and a timeout of at least 1 s")
+    if not math.isfinite(args.period) or args.period < 0:
+        parser.error("--period must be finite and nonnegative")
 
     sys.path.insert(0, str(ROOT))
     import zmq_em_pb2
@@ -45,26 +50,33 @@ def main():
     request = envelope.SerializeToString()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     counts = Counter()
-    total = len(TARGETS) * 2 * args.samples
     print("Run on the bridge host, with the bridge stopped.")
     print("A valid reply after 1 s is labelled late; receive limit is "
           f"{args.timeout:g} s. Input files are not modified.")
+
+    print(f"{args.rounds} rounds, {args.period:g} s between round starts; "
+          f"approximately {args.rounds * args.period / 60:.1f} minutes.")
 
     with args.output.open("x", newline="") as file, zmq.Context() as context:
         writer = csv.writer(file)
         writer.writerow(["time_utc", "host", "address", "port", "device",
                          "mode", "request", "request_ms", "result"])
-        with tqdm(total=total, desc="Checking latency", unit="request") as bar:
-            for host, address, port in TARGETS:
-                for mode in ("fresh", "reused"):
-                    socket = None
-                    try:
-                        for index in range(args.samples):
+        sockets = {}
+        try:
+            with tqdm(total=args.rounds, desc="Checking latency",
+                      unit="round") as bar:
+                for index in range(args.rounds):
+                    round_started = time.perf_counter()
+                    for host, address, port in TARGETS:
+                        for mode in ("fresh", "reused"):
+                            key = (host, port, mode)
+                            socket = sockets.get(key)
                             started = time.perf_counter()
                             result = "ok"
                             try:
                                 if socket is None:
                                     socket = context.socket(zmq.REQ)
+                                    sockets[key] = socket
                                     socket.setsockopt(zmq.LINGER, 0)
                                     socket.setsockopt(
                                         zmq.RCVTIMEO, int(args.timeout * 1000),
@@ -100,13 +112,18 @@ def main():
                             ):
                                 if socket is not None:
                                     socket.close()
-                                socket = None
-                            if index % 100 == 0:
-                                file.flush()
-                            bar.update(1)
-                    finally:
-                        if socket is not None:
-                            socket.close()
+                                sockets.pop(key, None)
+                    file.flush()
+                    if index + 1 < args.rounds:
+                        remaining = args.period - (
+                            time.perf_counter() - round_started
+                        )
+                        if remaining > 0:
+                            time.sleep(remaining)
+                    bar.update(1)
+        finally:
+            for socket in sockets.values():
+                socket.close()
     print("\nHost                 Port  Mode      Result                 Count")
     for (host, port, mode, result), count in sorted(counts.items()):
         print(f"{host:<20} {port:<5} {mode:<9} {result:<24} {count}")
