@@ -55,3 +55,6 @@ __pycache__/
 # Local bridge measurements
 runs/
 .pytest_cache/
+
+# Extra not needed folder
+/stress_test/
