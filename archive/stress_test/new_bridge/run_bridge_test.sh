@@ -11,7 +11,8 @@
 #   PERIOD, TIMEOUT, CONCURRENCY   optional overrides of bridge-varying.yaml (5 s, 10 s, 32)
 #   RESULTS_DIR    output folder (default results/new_bridge_scaling)
 #   PYTHON         interpreter with dune_dscs installed (default ~/DSCS/dscs-env/bin/python)
-#   HOSTS_FILE, PER_HOST, BASE_PORT, ENDPOINT   optional fleet/OPC UA overrides
+#   HOSTS_FILE, PER_HOST, BASE_PORT   optional fleet overrides
+#   STRESS_ENDPOINT (or ENDPOINT)  OPC UA endpoint of the bridge (default opc.tcp://127.0.0.1:4841/dune/)
 set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

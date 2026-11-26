@@ -29,6 +29,7 @@ import json
 import math
 import os
 import platform
+import resource
 import signal
 import subprocess
 import sys
@@ -48,6 +49,9 @@ HERE = Path(__file__).resolve().parent
 STRESS = HERE.parent                # archive/stress_test/: results go here
 REPO = HERE.parents[2]              # repository root
 DEFAULT_TEMPLATE = REPO / "examples" / "bridge-varying.yaml"
+# The stress test serves OPC UA on its own port, so it does not clash with another bridge
+# on the same host (those use 4840). Change it with STRESS_ENDPOINT or --endpoint.
+DEFAULT_ENDPOINT = os.environ.get("STRESS_ENDPOINT") or "opc.tcp://127.0.0.1:4841/dune/"
 DECODE_ERRORS = (ValueError, TypeError, LookupError, AttributeError, DecodeError)
 
 COLUMNS = [
@@ -114,7 +118,7 @@ def build_config(args):
                         "endpoint": f"tcp://{address}:{port}", "period": period,
                         "variables": base["variables"]})
     config = {
-        "endpoint": args.endpoint or template.get("endpoint", "opc.tcp://127.0.0.1:4840/dune/"),
+        "endpoint": args.endpoint,
         "timeout": args.timeout if args.timeout is not None else template.get("timeout", 2.0),
         "concurrency": args.concurrency if args.concurrency is not None else template.get("concurrency", 32),
         "devices": devices,
@@ -348,7 +352,8 @@ def parse_arguments():
     parser.add_argument("--period", type=float, help="override poll period (template: 5 s)")
     parser.add_argument("--timeout", type=float, help="override device read timeout (template: 10 s)")
     parser.add_argument("--concurrency", type=int, help="override concurrent reads (template: 32)")
-    parser.add_argument("--endpoint", help="override OPC UA endpoint (template: opc.tcp://127.0.0.1:4840/dune/)")
+    parser.add_argument("--endpoint", default=DEFAULT_ENDPOINT,
+                        help=f"OPC UA endpoint the bridge serves (default {DEFAULT_ENDPOINT}; env STRESS_ENDPOINT)")
     parser.add_argument("--metrics-interval", type=float, default=5, help="bridge JSON snapshot period")
     parser.add_argument("--require-all", action="store_true",
                         help="abort after warm-up if any emulator never answered")
@@ -364,8 +369,26 @@ def parse_arguments():
     return args
 
 
+def raise_file_limit(devices):
+    """Each device keeps a ZMQ socket (about 2 file descriptors). The usual soft limit of
+    1024 open files is reached near N = 500; raise it to the hard limit for this process."""
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    wanted = hard if hard != resource.RLIM_INFINITY else max(soft, 65536)
+    if soft != resource.RLIM_INFINITY and soft < wanted:
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (wanted, hard))
+            soft = wanted
+        except (ValueError, OSError) as error:
+            print(f"WARNING: could not raise the open-file limit from {soft}: {error}", flush=True)
+    if soft != resource.RLIM_INFINITY and soft < 3 * devices + 100:
+        print(f"WARNING: open-file limit {soft} is low for N={devices} (about {3 * devices + 100} needed)",
+              flush=True)
+    return soft, hard
+
+
 def main():
     args = parse_arguments()
+    file_limit = raise_file_limit(args.devices)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     n = args.devices
     csv_path = args.output_dir / f"bridge_N{n}.csv"
@@ -395,6 +418,7 @@ def main():
         "window_s": args.window if args.window is not None else period,
         "warmup_s": args.warmup, "windows_requested": args.windows,
         "metrics_interval_s": args.metrics_interval,
+        "open_file_limit": {"soft": file_limit[0], "hard": file_limit[1]},
         "csv_notes": {
             "window": "fixed time window; replaces the old polling cycle",
             "polls": "completed device polls (one poll = all protobuf groups of one device)",

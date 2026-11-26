@@ -7,6 +7,9 @@ This is a repeat of the old bridge-only stress test (`diagnostics/run_bridge_tes
   5555–5654. Device i is on host `i % 10`, port `5555 + i // 10`, the same layout as before.
 - **Bridge:** `dune_dscs.bridge.Bridge`, unchanged. It uses the WIB device from
   `examples/bridge-varying.yaml`: 14 variables, period 5 s, timeout 10 s, concurrency 32.
+  The test bridge serves OPC UA on **port 4841** (`opc.tcp://127.0.0.1:4841/dune/`), not on the
+  usual 4840, so it does not clash with another bridge on the same host. See
+  [OPC UA port](#opc-ua-port).
 
 The scripts live in `archive/stress_test/new_bridge/` and are run from `~/dune-dscs/archive/stress_test`.
 Their output goes to `archive/stress_test/results/`, `figures/` and `.runtime/`, which git
@@ -47,8 +50,34 @@ It leaves any active venv (for example `opcua-env`), activates `~/DSCS/dscs-env`
 | `bridge_diag --devices N ...` | `python new_bridge/bridge_diagnostic.py --devices N ...` |
 | `run_full` | `new_bridge/run_bridge_test.sh` (env vars such as `RESULTS_DIR=...` still work) |
 | `plot_results ...` | `~/DSCS/opcua-env/bin/python new_bridge/plot_new_bridge_results.py ...` |
+| `stress_port [PORT]` | Show the OPC UA port and whether it is free; with `PORT`, change it |
 
-After sourcing, plain `python` is the `dscs-env` one.
+After sourcing, plain `python` is the `dscs-env` one. The script also prints the OPC UA
+endpoint and warns if its port is already in use on this host.
+
+## OPC UA port
+
+The bridge in this test serves OPC UA on `opc.tcp://127.0.0.1:4841/dune/` by default. Port 4840
+is left for other bridges: if a colleague's bridge already uses a port on the same host, the
+test stops with `OSError: [Errno 98] ... address already in use`.
+
+Check that a port is free, on the bridge host:
+
+```bash
+ss -ltn | grep -c ':4841 '      # 0 = free
+```
+
+To use another port, for example 4842, use one of these:
+
+```bash
+stress_port 4842                                   # after sourcing setup_env.sh; for this shell
+STRESS_PORT=4842 source ~/dune-dscs/archive/stress_test/new_bridge/setup_env.sh   # when sourcing
+export STRESS_ENDPOINT=opc.tcp://127.0.0.1:4842/dune/   # without setup_env.sh
+bridge_diag --endpoint opc.tcp://127.0.0.1:4842/dune/ ...   # for one run only
+```
+
+`bridge_diagnostic.py` and `run_bridge_test.sh` both read `STRESS_ENDPOINT`, also under
+`nohup`, because it is exported. The endpoint used is saved in `bridge_N<N>_settings.json`.
 
 ## Full run: commands in order
 
@@ -71,6 +100,8 @@ exit
 
 # --- 2. On the bridge host: checks (all must pass) ---
 source ~/dune-dscs/archive/stress_test/new_bridge/setup_env.sh
+# setup_env.sh prints "OPC UA endpoint: ...:4841 (port 4841 is free)".
+# If it warns that the port is in use, pick another one:  stress_port 4842
 check_fleet --verbose                                   # 1000/1000 ... (exit 0)
 bridge_diag --devices 10 --warmup 15 --windows 3 --require-all \
     --output-dir results/new_bridge_smoke_N10

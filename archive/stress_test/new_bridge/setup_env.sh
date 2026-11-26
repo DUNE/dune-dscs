@@ -10,6 +10,11 @@
 #     bridge_diag --devices N ...               bridge_diagnostic.py
 #     run_full                                  run_bridge_test.sh (pass env vars as usual)
 #     plot_results [options]                    plot script, with ~/DSCS/opcua-env
+#     stress_port [PORT]                        show or change the bridge's OPC UA port
+#
+# The bridge serves OPC UA on port 4841 (STRESS_ENDPOINT), not on the usual 4840,
+# so it does not clash with another bridge on the same host. To use another port:
+#     STRESS_PORT=4842 source .../setup_env.sh     or, after sourcing:  stress_port 4842
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     echo "Source this file instead: source ${BASH_SOURCE[0]}" >&2
@@ -43,6 +48,25 @@ if ! python -c "import dune_dscs.bridge, dune_dscs.emulator.wib" 2> /dev/null; t
     echo "WARNING: dune_dscs does not import in $DSCS_ENV. Run: $DSCS_ENV/bin/pip install -e ~/dune-dscs" >&2
 fi
 
+# Port check: prints whether the OPC UA port of STRESS_ENDPOINT is free on this host.
+_stress_port_check() {
+    local port="${STRESS_ENDPOINT##*:}"; port="${port%%/*}"
+    if ss -ltn 2> /dev/null | grep -q ":$port "; then
+        echo "WARNING: OPC UA port $port is already in use on $(hostname -s). Pick another: stress_port <PORT>" >&2
+    else
+        echo "OPC UA endpoint: $STRESS_ENDPOINT (port $port is free)"
+    fi
+}
+
+stress_port() {
+    if [[ -n "${1:-}" ]]; then
+        export STRESS_ENDPOINT="opc.tcp://127.0.0.1:$1/dune/"
+    fi
+    _stress_port_check
+}
+
+export STRESS_ENDPOINT="${STRESS_ENDPOINT:-opc.tcp://127.0.0.1:${STRESS_PORT:-4841}/dune/}"
+
 fleet_start()  { python "$STRESS_NEW_BRIDGE/emulator_fleet.py" start "$@"; }
 fleet_stop()   { python "$STRESS_NEW_BRIDGE/emulator_fleet.py" stop "$@"; }
 fleet_status() { python "$STRESS_NEW_BRIDGE/emulator_fleet.py" status "$@"; }
@@ -52,4 +76,5 @@ run_full()     { "$STRESS_NEW_BRIDGE/run_bridge_test.sh" "$@"; }
 plot_results() { "$PLOT_ENV/bin/python" "$STRESS_NEW_BRIDGE/plot_new_bridge_results.py" "$@"; }
 
 echo "$(hostname -s): dscs-env active, in $PWD"
-echo "Commands: fleet_start fleet_stop fleet_status check_fleet bridge_diag run_full plot_results"
+_stress_port_check
+echo "Commands: fleet_start fleet_stop fleet_status check_fleet bridge_diag run_full plot_results stress_port"
