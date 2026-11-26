@@ -9,7 +9,7 @@ from .protocols._generated import wib_pb2 as pb
 # Fault injection on the 0.9 V rail (ltc2991_48_voltages[3], Board0V9 in examples/bridge-varying.yaml).
 BOARD_0V9 = 3
 SPIKE_SECONDS, SPIKE_VOLTS = 4, 1.8
-DEAD_SECONDS, DEAD_READING = 120, 65536.0  # as if a 16-bit ADC saturated
+DEAD_SECONDS, DEAD_READING = 20, 0.0
 
 
 class Wib:
