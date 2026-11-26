@@ -1,13 +1,23 @@
 """Stateful WIB protobuf request/reply handler."""
 
+import time
+
 from google.protobuf.message import DecodeError, Message
 
 from .protocols._generated import wib_pb2 as pb
 
+# Fault injection on the 0.9 V rail (ltc2991_48_voltages[3], Board0V9 in examples/bridge-varying.yaml).
+BOARD_0V9 = 3
+SPIKE_SECONDS, SPIKE_VOLTS = 4, 1.8
+DEAD_SECONDS, DEAD_READING = 120, 65536.0  # as if a 16-bit ADC saturated
+
 
 class Wib:
-    def __init__(self, telemetry=None):
+    def __init__(self, telemetry=None, spike_0v9=None, dead_0v9=None):
         self.telemetry = telemetry
+        # Fault start times, in seconds after the emulator starts; None disables them.
+        self.started = time.monotonic()
+        self.spike_0v9, self.dead_0v9 = spike_0v9, dead_0v9
         self.femb_power = [False] * 4
         self.configuration_generation = 0
         self.sensors = {}
@@ -210,6 +220,11 @@ def _sensor_reply(model: Wib) -> Message:
             readings = getattr(sensors, name)
             for index, value in enumerate(readings):
                 readings[index] = model.telemetry.analog(value, abs(value)*.005, 20+group*8+index)
+    elapsed = time.monotonic() - model.started
+    if model.spike_0v9 is not None and 0 <= elapsed - model.spike_0v9 < SPIKE_SECONDS:
+        sensors.ltc2991_48_voltages[BOARD_0V9] = SPIKE_VOLTS
+    if model.dead_0v9 is not None and 0 <= elapsed - model.dead_0v9 < DEAD_SECONDS:
+        sensors.ltc2991_48_voltages[BOARD_0V9] = DEAD_READING
     for field_name in (
         "femb0_dc2dc_ltc2991_voltages",
         "femb1_dc2dc_ltc2991_voltages",
