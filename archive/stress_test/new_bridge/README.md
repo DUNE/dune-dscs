@@ -19,6 +19,7 @@ Don't switch branches while emulators or the bridge are running.
 
 | File | Purpose |
 |---|---|
+| `setup_env.sh` | `source` it: activates `dscs-env`, goes to `archive/stress_test`, adds short commands |
 | `hosts.txt` | Emulator hosts and addresses, in device order |
 | `emulator_fleet.py` | Start, stop or check the emulators on the host it runs on |
 | `fleet.sh` | Runs `emulator_fleet.py` on every host over ssh (optional) |
@@ -26,6 +27,77 @@ Don't switch branches while emulators or the bridge are running.
 | `bridge_diagnostic.py` | Runs the bridge for one N and writes `bridge_N<N>.csv` |
 | `run_bridge_test.sh` | Runs the series N = 10, 110, … 1000 |
 | `plot_new_bridge_results.py` | Plots (adapted from `plotting/plot_bridge_results.py`) |
+
+## Short commands (setup_env.sh)
+
+Instead of typing `~/DSCS/dscs-env/bin/python new_bridge/...` every time, run this once in each
+new terminal or ssh session:
+
+```bash
+source ~/dune-dscs/archive/stress_test/new_bridge/setup_env.sh
+```
+
+It leaves any active venv (for example `opcua-env`), activates `~/DSCS/dscs-env`, goes to
+`archive/stress_test`, warns if the branch is wrong or `dune_dscs` does not import, and defines:
+
+| Command | Same as |
+|---|---|
+| `fleet_start`, `fleet_stop`, `fleet_status` | `python new_bridge/emulator_fleet.py start\|stop\|status` (this host) |
+| `check_fleet --verbose` | `python new_bridge/check_fleet.py --verbose` |
+| `bridge_diag --devices N ...` | `python new_bridge/bridge_diagnostic.py --devices N ...` |
+| `run_full` | `new_bridge/run_bridge_test.sh` (env vars such as `RESULTS_DIR=...` still work) |
+| `plot_results ...` | `~/DSCS/opcua-env/bin/python new_bridge/plot_new_bridge_results.py ...` |
+
+After sourcing, plain `python` is the `dscs-env` one.
+
+## Full run: commands in order
+
+This is a summary of sections 0–5 with the short commands from `setup_env.sh`. See those
+sections for the details and for what to do when a check fails.
+
+```bash
+# --- 0. Once: create the environment (skip if ~/DSCS/dscs-env exists) ---
+python3 -m venv ~/DSCS/dscs-env
+~/DSCS/dscs-env/bin/pip install -e ~/dune-dscs
+
+# --- 1. On EACH host in hosts.txt (Weber02 03 06 07 09 10 11 12 13 14) ---
+ssh etapweberXX
+source ~/dune-dscs/archive/stress_test/new_bridge/setup_env.sh   # env, folder, branch check
+pkill -u "$USER" -f 'emulators/zmq_emulator.py'         # stop the old emulators
+ss -ltn | grep -cE ':(55[5-9][0-9]|56[0-5][0-9]) '      # must print 0
+fleet_start
+fleet_status                                            # 100/100 running
+exit
+
+# --- 2. On the bridge host: checks (all must pass) ---
+source ~/dune-dscs/archive/stress_test/new_bridge/setup_env.sh
+check_fleet --verbose                                   # 1000/1000 ... (exit 0)
+bridge_diag --devices 10 --warmup 15 --windows 3 --require-all \
+    --output-dir results/new_bridge_smoke_N10
+bridge_diag --devices 1000 --warmup 30 --windows 3 --require-all \
+    --output-dir results/new_bridge_smoke_N1000
+
+# --- 3. Full series N = 10, 110, ... 1000 (about 1 h) ---
+# Run it in tmux, or with nohup as here, so that it keeps running if the ssh session closes.
+# (nohup needs the script path; the run_full shortcut is for tmux or a session you keep open.)
+mkdir -p results
+nohup new_bridge/run_bridge_test.sh > results/run_full.log 2>&1 &
+tail -f results/run_full.log                            # Ctrl-C stops only tail, not the test
+# For a repeat, use a new folder: RESULTS_DIR=results/new_bridge_scaling_run2 run_full
+
+# --- 4. Plot (plot_results uses ~/DSCS/opcua-env by itself) ---
+plot_results --data-dir results/new_bridge_scaling \
+    --compare-dir ~/dune-dscs/stress_test/results/bridge_no_sleep
+# Report: figures/new_bridge_scaling/bridge_results.pdf
+
+# --- 5. Stop the emulators: on each host ---
+source ~/dune-dscs/archive/stress_test/new_bridge/setup_env.sh
+fleet_stop
+```
+
+With password-less ssh to all hosts, `new_bridge/fleet.sh start|status|stop` replaces the
+`fleet_start`, `fleet_status` and `fleet_stop` lines of steps 1 and 5. You still have to stop the
+old emulators on each host.
 
 ## 0. One-time setup
 
