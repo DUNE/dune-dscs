@@ -6,7 +6,8 @@
 #   DEVICE_COUNTS="10 110 210" WINDOWS=30 RESULTS_DIR=results/try1 new_bridge/run_bridge_test.sh
 #
 #   DEVICE_COUNTS  N values (default 10 110 ... 910 1000)
-#   WINDOWS        measured windows per N (default 60 = 5 min at the 5 s period)
+#   WINDOWS        measured windows per N (default 300 = 300 polls per device, like the old
+#                  300 cycles; 25 min per N at the 5 s period, about 4 h 45 min in total)
 #   WARMUP         warm-up seconds per N (default 30)
 #   PERIOD, TIMEOUT, CONCURRENCY   optional overrides of bridge-varying.yaml (5 s, 10 s, 32)
 #   RESULTS_DIR    output folder (default results/new_bridge_scaling)
@@ -19,7 +20,7 @@ HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd -- "$HERE/.."
 
 read -r -a DEVICE_COUNTS <<< "${DEVICE_COUNTS:-10 110 210 310 410 510 610 710 810 910 1000}"
-WINDOWS="${WINDOWS:-60}"
+WINDOWS="${WINDOWS:-300}"
 WARMUP="${WARMUP:-30}"
 RESULTS_DIR="${RESULTS_DIR:-$PWD/results/new_bridge_scaling}"
 PYTHON="${PYTHON:-$HOME/DSCS/dscs-env/bin/python}"

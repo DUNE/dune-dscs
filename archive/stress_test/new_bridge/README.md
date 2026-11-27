@@ -108,17 +108,17 @@ bridge_diag --devices 10 --warmup 15 --windows 3 --require-all \
 bridge_diag --devices 1000 --warmup 30 --windows 3 --require-all \
     --output-dir results/new_bridge_smoke_N1000
 
-# --- 3. Full series N = 10, 110, ... 1000 (about 1 h) ---
-# Run it in tmux, or with nohup as here, so that it keeps running if the ssh session closes.
-# (nohup needs the script path; the run_full shortcut is for tmux or a session you keep open.)
-mkdir -p results
-nohup new_bridge/run_bridge_test.sh > results/run_full.log 2>&1 &
-tail -f results/run_full.log                            # Ctrl-C stops only tail, not the test
-# For a repeat, use a new folder: RESULTS_DIR=results/new_bridge_scaling_run2 run_full
+# --- 3. Full series N = 10, 110, ... 1000, 300 windows each (about 4 h 45 min), inside screen ---
+screen -S stress                                        # new screen session on the bridge host
+source ~/dune-dscs/archive/stress_test/new_bridge/setup_env.sh   # must print "port 4841 is free"
+check_fleet                                             # must end with 1000/1000
+run_full 2>&1 | tee results/run_full.log
+# Detach: Ctrl-A then D. Reattach on the same host: screen -r stress (see section 3)
+# For a repeat, use a new folder: RESULTS_DIR=results/new_bridge_scaling_run2 run_full ...
 
 # --- 4. Plot (plot_results uses ~/DSCS/opcua-env by itself) ---
 plot_results --data-dir results/new_bridge_scaling \
-    --compare-dir ~/dune-dscs/stress_test/results/bridge_no_sleep
+    --compare-dir ~/dune-dscs/stress_test/results/bridge_cpu_both
 # Report: figures/new_bridge_scaling/bridge_results.pdf
 
 # --- 5. Stop the emulators: on each host ---
@@ -247,9 +247,40 @@ Smoke-test folders are separate experiments. Delete them, or leave them out of t
 
 ## 3. Run the full test
 
+Each N runs a 30 s warm-up and then **300 windows** of 5 s, so every device is polled 300 times.
+This matches the old test's 300 cycles (300 polls per device, 300 CSV rows per N). It takes
+25 min per N, about **4 h 45 min** for the 11 values of N. The old test was shorter in time
+because its cycle was shorter than 5 s. For a quick series use, for example, `WINDOWS=60 run_full`
+(5 min per N, about 1 h).
+Run it inside `screen`, so it keeps running when you log out or the ssh connection drops.
+On the bridge host:
+
 ```bash
-new_bridge/run_bridge_test.sh        # N = 10 110 ... 1000; 60 windows (5 min) + 30 s warm-up each, about 1 h
+screen -S stress
 ```
+
+Inside the screen session:
+
+```bash
+source ~/dune-dscs/archive/stress_test/new_bridge/setup_env.sh   # must print "port 4841 is free"
+check_fleet                                                      # must end with 1000/1000
+run_full 2>&1 | tee results/run_full.log
+```
+
+| Action | Command |
+|---|---|
+| Detach, the test keeps running | `Ctrl-A`, then `D` |
+| Log out | `exit` (after detaching) |
+| Reattach later | `ssh` to the **same host**, then `screen -r stress` |
+| List sessions | `screen -ls` |
+| Follow progress without attaching | `tail -f ~/dune-dscs/archive/stress_test/results/run_full.log` |
+| Stop the test | Reattach, then `Ctrl-C` |
+
+When it has finished, plot in the same session (section 4), then close it with `exit`.
+Without `setup_env.sh`, the run command is `new_bridge/run_bridge_test.sh`.
+
+Another bridge on the same host shares its CPU and network and affects the results. Check
+before you start, for example with `ps -ef | grep '[d]une_dscs.bridge'`.
 
 Runner options are set through environment variables: `DEVICE_COUNTS`, `WINDOWS`, `WARMUP`,
 `PERIOD`, `TIMEOUT`, `CONCURRENCY`, `RESULTS_DIR` (default `results/new_bridge_scaling`).
@@ -264,7 +295,7 @@ A single N can run until you press Ctrl-C (endurance):
 
 ```bash
 ~/DSCS/opcua-env/bin/python new_bridge/plot_new_bridge_results.py \
-    --data-dir results/new_bridge_scaling --compare-dir ~/dune-dscs/stress_test/results/bridge_no_sleep
+    --data-dir results/new_bridge_scaling --compare-dir ~/dune-dscs/stress_test/results/bridge_cpu_both
 ```
 
 The report goes to `figures/new_bridge_scaling/`: `bridge_results.pdf`, PNGs and summary CSVs.
@@ -289,7 +320,8 @@ every device is normally polled once.
 | `mean_request_ms`, `request_*_ms` | same names | One ZMQ round trip, successful only: the same definition as before |
 | `parse_total_ms` | — | Parsing happens inside the device read (`query_*_ms`) |
 | `update_total_ms` | `publish_total_ms` | Also writes status nodes |
-| `cpu_percent` | `cpu_percent` | Over the window. There is no "excluding sleep" value because there is no global sleep. |
+| `cpu_percent` | `cpu_percent` | Share of one core, idle time included: old over the cycle including the 1 s sleep, new over the window |
+| `active_s`, `cpu_active_percent` | — | The new bridge has no global sleep, so there is no "active part" to measure. Use `queue_*`, `lateness_*`, `overruns`, `loop_lag_*` |
 | `ram_mb` | `ram_mb` | MB (10^6 bytes), as before |
 | — | `query_*`, `queue_*`, `lateness_*`, `overruns`, `devices_stale`, `max_value_age_s`, `loop_lag_*`, `threads`, `file_descriptors` | New overload indicators |
 
@@ -297,6 +329,23 @@ Each N also writes `bridge_N<N>.yaml` (the exact config), `bridge_N<N>_settings.
 (settings, versions, git commit), `bridge_N<N>.log`, and the bridge's own
 `bridge_metrics_N<N>.json` (lifetime totals from `dune_dscs.metrics`).
 
-When comparing with old results, keep in mind that each device now does 4 requests per
-poll every 5 s, while the old test did 1 request per device every cycle (about 1 s or less).
-CPU and throughput therefore compare different workloads. Request latency and RAM compare directly.
+### Comparing with the old bridge: disclaimer
+
+Compare with `bridge_cpu_both`, the old N series **with** the 1 s sleep. Do not use
+`bridge_no_sleep`: there the old bridge polled without pause (about 540 device reads/s for
+every N), which is a different test.
+
+The two bridges carry **different workloads**, so compare trends with N, not absolute values:
+
+| Per device | Old bridge | New bridge |
+|---|---|---|
+| Measurement variables | 3 (1 temperature, 2 voltages) | 14 |
+| ZMQ requests per read | 1 (`GetSensors`) | 4 (sensors, femb, timing, version) |
+| OPC UA writes per read | 3 | 18 (14 values + 4 status nodes) |
+| OPC UA nodes | about 3 | 20 |
+| Time between reads | one cycle: 1.0 s (N=10) to 3.9 s (N=1000) | 5 s for every N |
+| At N=1000 | 255 requests/s, 766 OPC UA writes/s | 800 requests/s, 3600 OPC UA writes/s |
+
+With `--compare-dir`, the plot script adds a workload table as the first page of
+`bridge_results.pdf` (also `comparison_workload.png` and `.csv`), computed from both data
+sets, and prints this disclaimer under every plot that shows old data.

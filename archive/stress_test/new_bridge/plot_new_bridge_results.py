@@ -102,9 +102,12 @@ def median_band(ax, summary, metric, color=BLUE, label="New bridge"):
 
 
 def save_plot(fig, name, pdf, args, note=None):
+    bottom = 0
     if note:
-        fig.text(0.5, 0.01, textwrap.fill(note, width=115), ha="center", va="bottom", fontsize=9)
-    fig.tight_layout(rect=(0, 0.12 if note else 0, 1, 1))
+        lines = textwrap.wrap(note, width=115)
+        fig.text(0.5, 0.01, "\n".join(lines), ha="center", va="bottom", fontsize=9)
+        bottom = min(0.5, (0.17 * len(lines) + 0.25) / fig.get_figheight())
+    fig.tight_layout(rect=(0, bottom, 1, 1))
     pdf.savefig(fig)
     if not args.no_images:
         fig.savefig(args.output_dir / f"{name}.png", dpi=200)
@@ -205,6 +208,63 @@ def old_failure_totals(datasets):
     return pd.DataFrame(rows, columns=["N", "failure_percent"])
 
 
+def workload(datasets, new):
+    """Work per device and per second for each N, so old and new runs can be put side by side."""
+    rows = []
+    for item in datasets:
+        data = item["data"]
+        seconds, devices = data["window_s" if new else "cycle_s"].sum(), item["N"]
+        reads = data["successes"].sum()
+        requests = data["zmq_requests"].sum() if new else data["attempts"].sum()  # old: 1 request per read
+        writes = data["opcua_writes"].sum() if new else data["node_writes"].sum()
+        rows.append({"bridge": "new" if new else "old", "N": devices,
+                     "variables_per_device": data["variables"].iloc[0] / devices,
+                     "requests_per_read": requests / reads if reads else np.nan,
+                     "opcua_writes_per_read": writes / reads if reads else np.nan,
+                     "seconds_between_reads": devices * seconds / reads if reads else np.nan,
+                     "reads_per_s": reads / seconds, "requests_per_s": requests / seconds,
+                     "opcua_writes_per_s": writes / seconds})
+    return pd.DataFrame(rows)
+
+
+def disclaimer_text(new_work, old_work):
+    def row(work):
+        top = work.sort_values("N").iloc[-1]
+        requests = round(top["requests_per_read"])
+        low, high = work["seconds_between_reads"].min(), work["seconds_between_reads"].max()
+        every = f"{low:.1f} s" if round(low, 1) == round(high, 1) else f"{low:.1f}-{high:.1f} s, growing with N"
+        return top, (f"{top['variables_per_device']:.0f} variables, {requests} ZMQ request{'s' * (requests != 1)} "
+                     f"and {top['opcua_writes_per_read']:.0f} OPC UA writes per device read, each device read "
+                     f"every {every}")
+    new_top, new_text = row(new_work)
+    old_top, old_text = row(old_work)
+    n = int(min(new_top["N"], old_top["N"]))
+    return (f"DISCLAIMER: the two bridges carry different workloads. Old: {old_text}. New: {new_text}. "
+            f"At N={n}: old {old_top['requests_per_s']:.0f} requests/s and {old_top['opcua_writes_per_s']:.0f} "
+            f"OPC UA writes/s; new {new_top['requests_per_s']:.0f} requests/s and "
+            f"{new_top['opcua_writes_per_s']:.0f} OPC UA writes/s. Compare trends with N, not absolute values.")
+
+
+def disclaimer_page(pdf, new_work, old_work, text, args):
+    fig, ax = plt.subplots(figsize=(11, 6))
+    ax.axis("off")
+    ax.set_title("Old versus new bridge: workload per run", loc="left")
+    shown = pd.concat([old_work, new_work])
+    shown = shown[shown["N"].isin([shown["N"].min(), 510, shown["N"].max()])].sort_values(["N", "bridge"])
+    columns = ["bridge", "N", "variables_per_device", "requests_per_read", "opcua_writes_per_read",
+               "seconds_between_reads", "reads_per_s", "requests_per_s", "opcua_writes_per_s"]
+    cells = [[f"{v:.0f}" if isinstance(v, (int, float, np.number)) and k not in ("seconds_between_reads",)
+              else (f"{v:.2f}" if k == "seconds_between_reads" else str(v)) for k, v in r.items()]
+             for r in shown[columns].to_dict("records")]
+    labels = ["Bridge", "N", "Variables\n/device", "Requests\n/read", "OPC UA writes\n/read",
+              "s between reads\nof a device", "Reads/s", "Requests/s", "OPC UA\nwrites/s"]
+    table = ax.table(cellText=cells, colLabels=labels, loc="upper center", cellLoc="center")
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 1.8)
+    save_plot(fig, "comparison_workload", pdf, args, text)
+
+
 def setting_text(datasets):
     settings = datasets[0]["settings"]
     if not settings:
@@ -214,9 +274,12 @@ def setting_text(datasets):
             f"window {settings.get('window_s')} s.")
 
 
-def plot_all(datasets, summary, runs, old_summary, old_runs, args):
+def plot_all(datasets, summary, runs, old_summary, old_runs, args, disclaimer=None, works=None):
     base_note = "Bands show variation across windows, not confidence intervals. " + setting_text(datasets)
+    old_note = f" {disclaimer}" if disclaimer else ""
     with PdfPages(args.output_dir / "bridge_results.pdf") as pdf:
+        if disclaimer:
+            disclaimer_page(pdf, *works, disclaimer, args)
         # Each metric versus N, with the old bridge overlaid where comparable.
         for metric, (title, ylabel) in METRICS.items():
             if metric not in set(summary["metric"]):
@@ -226,7 +289,7 @@ def plot_all(datasets, summary, runs, old_summary, old_runs, args):
             note = base_note
             if old_summary is not None and metric in COMPARABLE:
                 median_band(ax, old_summary, COMPARABLE[metric], ORANGE, "Old bridge")
-                note += " Old bridge: per polling cycle."
+                note += " Old bridge: per polling cycle." + old_note
             if metric == "cpu_percent":
                 note += " 100% CPU = one logical CPU. No 'excluding sleep' variant: the new bridge has no global sleep."
             ax.set_title(title)
@@ -246,7 +309,8 @@ def plot_all(datasets, summary, runs, old_summary, old_runs, args):
             ax.set_ylabel(ylabel)
             style_axis(ax, versus_n=True)
             add_legend(ax)
-        save_plot(fig, "resources_vs_N", pdf, args, "P5–P95 describes windows. 100% CPU = one logical CPU.")
+        save_plot(fig, "resources_vs_N", pdf, args,
+                  "P5–P95 describes windows. 100% CPU = one logical CPU, idle time included." + old_note)
 
         # ZMQ request latency (same definition as the old 'request').
         fig, ax = plt.subplots(figsize=(9, 5))
@@ -264,7 +328,7 @@ def plot_all(datasets, summary, runs, old_summary, old_runs, args):
         add_legend(ax)
         save_plot(fig, "request_latency_combined_vs_N", pdf, args,
                   "One request = one ZMQ round trip (new bridge: 4 per device poll). Lines are medians across "
-                  "windows of each window's statistic. Successful requests only.")
+                  "windows of each window's statistic. Successful requests only." + old_note)
 
         # Complete device read.
         fig, ax = plt.subplots(figsize=(9, 5))
@@ -321,7 +385,7 @@ def plot_all(datasets, summary, runs, old_summary, old_runs, args):
         style_axis(ax, versus_n=True)
         add_legend(ax)
         save_plot(fig, "request_failures_total_vs_N", pdf, args,
-                  "Calculated from summed counts. New: one poll = one complete device read.")
+                  "Calculated from summed counts. New: one poll = one complete device read." + old_note)
 
         # Payload throughput.
         fig, ax = plt.subplots(figsize=(9, 5))
@@ -366,7 +430,7 @@ def plot_all(datasets, summary, runs, old_summary, old_runs, args):
         add_legend(ax)
         save_plot(fig, "processing_combined_vs_N", pdf, args,
                   "Response parsing is not separable in the new bridge: it is inside the device read. "
-                  "Publish also writes Available/LastError/LastSuccess/Sequence status nodes.")
+                  "Publish also writes Available/LastError/LastSuccess/Sequence status nodes." + old_note)
 
         # Errors, compact.
         fig, axes = plt.subplots(1, 3, figsize=(11, 3.2), sharey=True)
@@ -433,7 +497,7 @@ def main():
     print("Files used:")
     for item in datasets:
         print(f"  {item['file'].name}: N={item['N']}, {len(item['data'])} windows")
-    old_summary = old_runs = None
+    old_summary = old_runs = disclaimer = works = None
     if args.compare_dir:
         old = load(args.compare_dir, "cycle_s", 0, args.devices)
         if not old:
@@ -441,6 +505,9 @@ def main():
         print(f"Comparison: {len(old)} old-bridge files from {args.compare_dir}")
         old_summary = summarize(old, set(COMPARABLE.values()) | {"update_total_ms"})
         old_runs = old_failure_totals(old)
+        works = (workload(datasets, new=True), workload(old, new=False))
+        disclaimer = disclaimer_text(*works)
+        print(disclaimer)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({"font.size": 11, "axes.titlesize": 14, "axes.spines.top": False,
                          "axes.spines.right": False, "legend.frameon": False})
@@ -453,7 +520,9 @@ def main():
         args.output_dir / "input_files.csv", index=False)
     (args.output_dir / "plot_settings.json").write_text(json.dumps(
         {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, indent=2) + "\n")
-    plot_all(datasets, summary, runs, old_summary, old_runs, args)
+    if works:
+        pd.concat(works).to_csv(args.output_dir / "comparison_workload.csv", index=False)
+    plot_all(datasets, summary, runs, old_summary, old_runs, args, disclaimer, works)
     print(f"Reports saved in {args.output_dir} (bridge_results.pdf, PNGs, CSV summaries)")
 
 
