@@ -32,7 +32,10 @@ async def run(args):
     from .protocols._generated import daphneV3_high_level_confs_pb2 as daphne_pb
     from .protocols._generated import wib_pb2 as wib_pb
     from .wib import Wib
-    device = Daphne(telemetry=telemetry) if args.kind == "daphne" else Wib(telemetry=telemetry)
+    faults = {f"{name}_0v9": getattr(args, f"{name}_0V9", None) for name in ("spike", "dead", "nan", "missing")}
+    faults["garbage_reply"] = getattr(args, "garbage_reply", None)
+    faults["garbage_0v9"] = getattr(args, "garbage_0V9", None)
+    device = Daphne(telemetry=telemetry) if args.kind == "daphne" else Wib(telemetry=telemetry, **faults)
     with (
         zmq.asyncio.Context() as context,
         context.socket(zmq.ROUTER if args.kind == "daphne" else zmq.REP) as socket,
@@ -79,7 +82,25 @@ def main():
     parser.add_argument("--vary-period", type=float, default=60, help="sensor drift period in seconds")
     parser.add_argument("--seed", type=int, help="repeatable per-device phase; defaults to the listening port")
     parser.add_argument("--pdu-full", action="store_true", help="expose the verified PX4 monitoring catalogue")
+    parser.add_argument("--spike_0V9", type=float, metavar="SECONDS",
+                        help="WIB: 0V9 reads 1.8 V for 4 s, starting SECONDS after start")
+    parser.add_argument("--dead_0V9", type=float, metavar="SECONDS",
+                        help="WIB: 0V9 reads 0 V for DEAD_SECONDS (wib.py), starting SECONDS after start")
+    parser.add_argument("--nan_0V9", type=float, metavar="SECONDS",
+                        help="WIB: 0V9 reads NaN for DEAD_SECONDS (wib.py), starting SECONDS after start")
+    parser.add_argument("--missing_0V9", type=float, metavar="SECONDS",
+                        help="WIB: 0V9 and the ltc2991_48 channels after it are absent from the sensor reply"
+                             " for DEAD_SECONDS (wib.py), starting SECONDS after start")
+    parser.add_argument("--garbage_reply", type=float, metavar="SECONDS",
+                        help="WIB: every request gets random bytes that are not a valid protobuf reply,"
+                             " for DEAD_SECONDS (wib.py), starting SECONDS after start")
+    parser.add_argument("--garbage_0V9", type=float, metavar="SECONDS",
+                        help="WIB: 0V9 is random bytes (the rest of the reply is valid)"
+                             " for DEAD_SECONDS (wib.py), starting SECONDS after start")
     args = parser.parse_args()
+    for name in ("spike_0V9", "dead_0V9", "nan_0V9", "missing_0V9", "garbage_reply", "garbage_0V9"):
+        if getattr(args, name) is not None and (args.kind != "wib" or getattr(args, name) < 0):
+            parser.error(f"--{name} needs kind wib and SECONDS >= 0")
     args.port = args.port if args.port is not None else {"pdu": 1161, "daphne": 40001, "wib": 1234}[args.kind]
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")

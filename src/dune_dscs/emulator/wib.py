@@ -1,13 +1,28 @@
 """Stateful WIB protobuf request/reply handler."""
 
+import os
+import struct
+import time
+
 from google.protobuf.message import DecodeError, Message
 
 from .protocols._generated import wib_pb2 as pb
 
+# Fault injection on the 0.9 V rail (ltc2991_48_voltages[3], Board0V9 in examples/bridge-varying.yaml).
+BOARD_0V9 = 3
+SPIKE_SECONDS, SPIKE_VOLTS = 4, 1.8
+DEAD_SECONDS, DEAD_READING = 20, 0.0
+
 
 class Wib:
-    def __init__(self, telemetry=None):
+    def __init__(self, telemetry=None, spike_0v9=None, dead_0v9=None, nan_0v9=None, missing_0v9=None,
+                 garbage_reply=None, garbage_0v9=None):
         self.telemetry = telemetry
+        # Fault start times, in seconds after the emulator starts; None disables them.
+        self.started = time.monotonic()
+        self.spike_0v9, self.dead_0v9 = spike_0v9, dead_0v9
+        self.nan_0v9, self.missing_0v9 = nan_0v9, missing_0v9
+        self.garbage_reply, self.garbage_0v9 = garbage_reply, garbage_0v9
         self.femb_power = [False] * 4
         self.configuration_generation = 0
         self.sensors = {}
@@ -38,6 +53,11 @@ class Wib:
         self.timing_locked = True
 
     async def reply(self, payload: bytes) -> bytes:
+        elapsed = time.monotonic() - self.started
+        if self.garbage_reply is not None and 0 <= elapsed - self.garbage_reply < DEAD_SECONDS:
+            # Random bytes; the leading 0x00 is protobuf field number 0, which is illegal,
+            # so the reply never parses by chance.
+            return b"\x00" + os.urandom(31)
         # Requests wrap Any in Command.cmd; replies are raw response messages.
         command = pb.Command()
         try:
@@ -210,6 +230,19 @@ def _sensor_reply(model: Wib) -> Message:
             readings = getattr(sensors, name)
             for index, value in enumerate(readings):
                 readings[index] = model.telemetry.analog(value, abs(value)*.005, 20+group*8+index)
+    elapsed = time.monotonic() - model.started
+    if model.spike_0v9 is not None and 0 <= elapsed - model.spike_0v9 < SPIKE_SECONDS:
+        sensors.ltc2991_48_voltages[BOARD_0V9] = SPIKE_VOLTS
+    if model.dead_0v9 is not None and 0 <= elapsed - model.dead_0v9 < DEAD_SECONDS:
+        sensors.ltc2991_48_voltages[BOARD_0V9] = DEAD_READING
+    if model.nan_0v9 is not None and 0 <= elapsed - model.nan_0v9 < DEAD_SECONDS:
+        sensors.ltc2991_48_voltages[BOARD_0V9] = float("nan")
+    if model.garbage_0v9 is not None and 0 <= elapsed - model.garbage_0v9 < DEAD_SECONDS:
+        # The field is a double: random bytes in its 8-byte encoding, the rest of the reply stays valid.
+        sensors.ltc2991_48_voltages[BOARD_0V9] = struct.unpack("<d", os.urandom(8))[0]
+    if model.missing_0v9 is not None and 0 <= elapsed - model.missing_0v9 < DEAD_SECONDS:
+        # A repeated field has no holes: dropping 0V9 also drops the channels after it.
+        del sensors.ltc2991_48_voltages[BOARD_0V9:]
     for field_name in (
         "femb0_dc2dc_ltc2991_voltages",
         "femb1_dc2dc_ltc2991_voltages",
