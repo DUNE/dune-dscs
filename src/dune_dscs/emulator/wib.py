@@ -1,5 +1,6 @@
 """Stateful WIB protobuf request/reply handler."""
 
+import os
 import time
 
 from google.protobuf.message import DecodeError, Message
@@ -13,12 +14,14 @@ DEAD_SECONDS, DEAD_READING = 20, 0.0
 
 
 class Wib:
-    def __init__(self, telemetry=None, spike_0v9=None, dead_0v9=None, nan_0v9=None, missing_0v9=None):
+    def __init__(self, telemetry=None, spike_0v9=None, dead_0v9=None, nan_0v9=None, missing_0v9=None,
+                 garbage_reply=None):
         self.telemetry = telemetry
         # Fault start times, in seconds after the emulator starts; None disables them.
         self.started = time.monotonic()
         self.spike_0v9, self.dead_0v9 = spike_0v9, dead_0v9
         self.nan_0v9, self.missing_0v9 = nan_0v9, missing_0v9
+        self.garbage_reply = garbage_reply
         self.femb_power = [False] * 4
         self.configuration_generation = 0
         self.sensors = {}
@@ -49,6 +52,11 @@ class Wib:
         self.timing_locked = True
 
     async def reply(self, payload: bytes) -> bytes:
+        elapsed = time.monotonic() - self.started
+        if self.garbage_reply is not None and 0 <= elapsed - self.garbage_reply < DEAD_SECONDS:
+            # Random bytes; the leading 0x00 is protobuf field number 0, which is illegal,
+            # so the reply never parses by chance.
+            return b"\x00" + os.urandom(31)
         # Requests wrap Any in Command.cmd; replies are raw response messages.
         command = pb.Command()
         try:
